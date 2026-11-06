@@ -1,0 +1,78 @@
+{
+  "manifest": "tenbol_flat_lcdm_matter_v1",
+  "created": "2026-11-06",
+  "status": "working hypothesis, not a user-supplied scientific prior",
+  "physics": {
+    "gravity": "general relativity, flat",
+    "species": ["photons", "massless neutrinos", "one thermal massive-neutrino species",
+                "baryons", "cold dark matter", "cosmological constant"],
+    "perturbations": "scalar adiabatic, single initial mode",
+    "gauge": "synchronous, CDM rest frame",
+    "matter_definition": "total matter (delta_tot), including massive neutrinos",
+    "N_eff": 3.046,
+    "T_cmb_K": 2.7255,
+    "y_he": "BBN consistency (PRIMAT table via CAMB default predictor)",
+    "recombination": "RECFAST with CAMB default (cosmorec) fudge parameter set",
+    "reionization": {"model": "tanh", "tau": 0.0544},
+    "pivot_k_Mpc": 0.05
+  },
+  "parameters": {
+    "omega_b": {"min": 0.020, "max": 0.0245, "fiducial": 0.0224},
+    "omega_c": {"min": 0.10, "max": 0.16, "fiducial": 0.120},
+    "h": {"min": 0.60, "max": 0.80, "fiducial": 0.67},
+    "A_s": {"min": 1.5e-9, "max": 2.7e-9, "fiducial": 2.1e-9},
+    "n_s": {"min": 0.92, "max": 1.02, "fiducial": 0.965},
+    "m_nu_sum_eV": {"min": 0.06, "max": 0.30, "fiducial": 0.06}
+  },
+  "output": {
+    "k_unit": "h/Mpc",
+    "power_unit": "(Mpc/h)^3",
+    "k_grid": {"min": 1e-4, "max": 10.0, "npoints": 256, "spacing": "log"},
+    "redshifts": [0.0, 0.5, 1.0, 2.0],
+    "fields": ["P_lin(k,z)", "P_nonlinear(k,z)", "sigma8(z)"]
+  },
+  "numeric": {
+    "internal_kmax_h": 20.0,
+    "internal_kgrid": "log, >= 40 points per decade, 1e-5 < k < 20 h/Mpc",
+    "nonlinear": {
+      "provider": "hmcode",
+      "version": "mead2020",
+      "A_baryon": 3.13,
+      "eta_baryon": 0.603,
+      "logT_AGN": 7.8,
+      "wiggle_max_fnu": 0.01,
+      "growth_treatment": "linear growth of the total matter spectrum provided by the candidate",
+      "internal_kmax_h": 20.0
+    },
+    "acceptance": {"max_rel_pnl": 0.005, "development_margin": 0.0025}
+  },
+  "reference": {
+    "code": "CAMB 2.0.5",
+    "settings": {
+      "AccuracyBoost": 2.0,
+      "lAccuracyBoost": 2.0,
+      "TimeStepBoost": 2.0,
+      "lSampleBoost": 1.0,
+      "k_per_logint": 40,
+      "kmax_h": 20.0,
+      "halofit_version": "mead2020",
+      "HMCode_A_baryon": 3.13,
+      "HMCode_eta_baryon": 0.603,
+      "HMCode_logT_AGN": 7.8,
+      "HMCode_wiggle_max_fnu": 0.01
+    },
+    "generation": "benchmarks/tenbol/make_reference.py",
+    "resampling": "cubic spline in (ln k, ln P) of CAMB's internal matter power grid"
+  },
+  "batches": {
+    "smoke": 16,
+    "tuning": 32,
+    "holdout": 128,
+    "sampling_seed": 20261106
+  },
+  "performance": {
+    "baseline": "CAMB 2.0.5 at the settings above, tuned multiprocessing on the same allocation",
+    "target": ">= 2x throughput vs tuned CPU baseline at matched accuracy (research target, must be measured)",
+    "timing_scope": "full pipeline: parameter normalization, background/thermal, perturbations, all requested redshifts, linear spectrum, sigma(R), HMcode, result assembly"
+  }
+}
