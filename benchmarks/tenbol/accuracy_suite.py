@@ -65,7 +65,10 @@ def camb_growth(cosmology: Cosmology, kh, z_ref=1000.0, z_out=0.0):
     for k in kh:
         a = np.interp(np.log(k), np.log(q), tr["delta_tot"][:, i_ref])
         b = np.interp(np.log(k), np.log(q), tr["delta_tot"][:, i_out])
-        out.append(a / b)
+        # out is delta(z_out)/delta(z_ref), the same orientation as
+        # PowerResult.growth.  Writing a/b here made the comparison ratio the
+        # square of the real one, which is what produced the 1.5e8 % readings.
+        out.append(b / a)
     return np.array(out)
 
 
