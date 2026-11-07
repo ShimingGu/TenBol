@@ -133,7 +133,7 @@ class PerturbationBatch:
         inv_a = 1.0 / a
         # self.mu0 is already per-trajectory (T,), so it needs its own axis;
         # a[:, None] * self.mu0 would broadcast to (T, T) for T > 1.
-        mu = np.maximum(a[:, None] * self.mu0[:, None], 1e-12)
+        mu = np.maximum(a * self.mu0, 1e-12)
         rho = np.exp(self._rho_spl(np.log(mu)))
         pnu = np.exp(self._p_spl(np.log(mu)))
         grho_nu_mass = np.sum(self.grho_nu_unit * self.degeneracy * rho, axis=1) * inv_a**2
@@ -158,7 +158,7 @@ class PerturbationBatch:
         kappa = np.minimum(self._interp(self._kap_tab, ln_a), 1.0e30)
         dopacity = self._interp(self._dkap_tab, ln_a) * h   # dkappa/dtau
         cs2 = self._interp(self._cs2_tab, ln_a)
-        am = np.maximum(a[:, None] * self.mu0[:, None], 1e-30)
+        am = np.maximum(a * self.mu0, 1e-30)
         vnu = 1.0 / np.sqrt(1.0 + (am[:, :, None] / NU_Q[None, None, :]) ** 2)
         return {
             "h": h, "hprime": hprime, "gpres": gpres, "tau": tau,
@@ -390,8 +390,11 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None):
 
     # ---- massive neutrinos (block layout (S, nq, L+1, T)) --------------
     vT = np.transpose(c["vnu"], (1, 2, 0))                # (S, nq, T)
-    kb = k[None, None, :]
-    zb = z[None, None, :]
+    # Flatten to (T,) first: with a batch an upstream term can leave a trailing
+    # singleton axis, and k[None, None, :] would then broadcast to (T, 1, 1)
+    # instead of (1, 1, T).
+    kb = np.reshape(k, (1, 1, T))
+    zb = np.reshape(z, (1, 1, T))
     dFnu = np.zeros_like(Fnu)
     kk = np.array([k * l / (2.0 * l + 1.0) for l in range(L.lmax_nu + 2)])
     kk2 = np.array([k * (l + 1.0) / (2.0 * l + 1.0) for l in range(L.lmax_nu + 2)])
@@ -550,7 +553,12 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
                        np.minimum(lim, s.dlna_superhorizon), lim)
         lim = np.where(~tcu,
                        np.minimum(lim, s.stiff_factor / np.maximum(c["kappa"] * dtau, 1e-30)), lim)
-        h = np.minimum.reduce([lim, dln_target, np.full(T, s.h_max)])
+        # Two-argument minimum rather than reduce([...]): with a batch the three
+        # operands can differ in rank, and np.minimum.reduce would try to stack
+        # them and fail on the inhomogeneous shape.
+        h = np.minimum(np.minimum(np.reshape(lim, (T,)), np.reshape(dln_target, (T,))),
+                       s.h_max)
+        h = np.broadcast_to(h, (T,)).astype(np.float64, copy=True)
         h = np.maximum(h, s.dlna_min)
         h = np.where(done, 0.0, h)
 
