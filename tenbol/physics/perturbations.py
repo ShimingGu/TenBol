@@ -112,6 +112,10 @@ class PerturbationBatch:
         self.mu0 = bg._mu0[s]
         self._ln_a = thermal.ln_a_table
         self._kap_tab = thermal.opacity(np.exp(self._ln_a))
+        # d(kappa)/dln a, same grid; kappa varies by many orders of magnitude
+        # through recombination, and the tight-coupling slip needs its
+        # logarithmic derivative (CAMB: dopacity/opacity).
+        self._dkap_tab = np.gradient(self._kap_tab, self._ln_a, axis=1)
         self._tau_grid = bg.tau(np.exp(self._ln_a))                    # (B, N)
         self._cs2_tab = thermal.cs2_b(np.exp(self._ln_a))
         self._tau_tab = bg._tau_table
@@ -150,12 +154,13 @@ class PerturbationBatch:
         # coupling is exactly the tight-coupling limit, and capping avoids
         # overflow in branch values that are discarded by the regime mask.
         kappa = np.minimum(self._interp(self._kap_tab, ln_a), 1.0e30)
+        dopacity = self._interp(self._dkap_tab, ln_a) * h   # dkappa/dtau
         cs2 = self._interp(self._cs2_tab, ln_a)
         am = np.maximum(a[:, None] * self.mu0, 1e-30)
         vnu = 1.0 / np.sqrt(1.0 + (am[:, :, None] / NU_Q[None, None, :]) ** 2)
         return {
             "h": h, "hprime": hprime, "gpres": gpres, "tau": tau,
-            "kappa": kappa, "cs2": cs2, "grho_c": grho_c, "grho_b": grho_b,
+            "kappa": kappa, "dopacity": dopacity, "cs2": cs2, "grho_c": grho_c, "grho_b": grho_b,
             "grho_g": grho_g, "grho_r": grho_r, "grho_nu_mass": grho_nu_mass,
             "grho_nu_species": (self.grho_nu_unit * self.degeneracy * rho)
             * (inv_a ** 2)[:, None],
@@ -309,7 +314,9 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None):
     pb43 = 4.0 / 3.0 * grho_g / grho_b
     photbar = grho_g / grho_b
     slip = (
-        -(2.0 * h / (1.0 + pb43)) * (vb - 0.75 * qg_e)
+        -(2.0 * h / (1.0 + pb43)
+          + np.where(tcu, c.get('dopacity', 0.0) / np.maximum(kappa, 1e-300), 0.0))
+        * (vb - 0.75 * qg_e)
         + (-adotdota * vb - k / 2.0 * h * dg_e + k * (cs2 * db_dot - dg_dot / 4.0))
         / (kappa * (1.0 + pb43))
     )
