@@ -31,7 +31,7 @@ def _omega_m(bg, a):
     return float(np.ravel(matter / total)[0])
 
 
-def linear_growth(bg, a_out, a_start: float = 1.0e-2):
+def linear_growth(bg, a_out, a_start: float = 3.0e-2):
     """Scale-independent linear growth factor ``D(a)``, normalised to ``D(1) = 1``.
 
     Solves
@@ -134,7 +134,7 @@ def sigma8(k, pk):
     return float(sigma_r(k, pk, 8.0)[0])
 
 
-def growth_terms(bg, z, a_start: float = 1.0e-2, n_tab: int = 512):
+def growth_terms(bg, z, a_start: float = 3.0e-2, n_tab: int = 512):
     """Mead (2017) growth terms ``x`` and ``y`` at redshift ``z``.
 
     CAMB's HMcode fits (``dc_Mead``, ``Dv_Mead``) are written in terms of
