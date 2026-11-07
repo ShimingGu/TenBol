@@ -557,25 +557,26 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
             bad = int(np.argmax(~np.isfinite(Y_new).all(axis=0)))
             raise NumericalFailure(
                 f"non-finite perturbation state at a={a[bad]:.3e}, k={batch.k[bad]:.3e}")
+        Y = Y_new
+        a = np.where(done, a, np.minimum(a * np.exp(h), a_end))
+        c = batch.coefficients(a)
         if getattr(batch, "_probe_list", None):
             for tgt in list(batch._probe_list):
                 crossed = (a_prev < tgt) & (a >= tgt)
                 if np.any(crossed):
                     j = int(np.argmax(crossed))
-                    kap = float(c["kappa"][j]); kk = float(batch.k[j]); hh = float(c["h"][j])
+                    dc = float(Y[L.scalar("dc")][j]); dcp = float(k1[L.scalar("dc")][j])
+                    hh = float(c["h"][j]); kk = float(batch.k[j])
+                    dm = float(Y[L.scalar("dc")][j])
+                    zmet = -dcp / kk                      # from delta_c' = -k z
                     print(f"PROBE a={float(a[j]):.3e} z={1/float(a[j])-1:8.1f} "
+                          f"dc={dc: .4e} dc'={dcp: .4e} dm={dm: .4e} "
+                          f"zmet={zmet: .4e} z_poisson={zmet:.3e} "
+                          f"ratio_zdot={(-dcp)/(dc*hh):.4f} "
                           f"etak={float(Y[L.scalar('etak')][j]): .4e} "
-                          f"dc={float(Y[L.scalar('dc')][j]): .4e} "
-                          f"dg={float(Y[L.scalar('dg')][j]): .4e} "
                           f"qg={float(Y[L.scalar('qg')][j]): .4e} "
-                          f"vb={float(Y[L.scalar('vb')][j]): .4e} "
-                          f"dz={float(k1[L.scalar('etak')][j]): .4e} "
-                          f"kappa={kap:.3e} k={kk:.3e} H={hh:.3e} "
-                          f"tc={bool(kap > kk / s.tc_epsilon)}", flush=True)
+                          f"vb={float(Y[L.scalar('vb')][j]): .4e}", flush=True)
                     batch._probe_list.remove(tgt)
-        Y = Y_new
-        a = np.where(done, a, np.minimum(a * np.exp(h), a_end))
-        c = batch.coefficients(a)
 
         # regime switches: install the CAMB tight-coupling exit values
         for j, name in enumerate(("tc", "rsa_g", "rsa_r")):
