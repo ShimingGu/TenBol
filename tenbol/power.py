@@ -90,8 +90,18 @@ def _background_pair(cosmologies: CosmologyBatch, reionization: Reionization):
 def matter_power(cosmologies: CosmologyBatch, k_h, redshifts,
                  settings: PerturbationSettings | None = None,
                  reionization: Reionization | None = None,
-                 use_cache: bool = True) -> PowerResult:
+                 use_cache: bool = True,
+                 bucket_by_k: bool = True) -> PowerResult:
     """Linear matter perturbations for every (cosmology, k, z) in one batch.
+
+    ``bucket_by_k`` splits the integration into one batch per wavenumber.  The
+    solver advances every trajectory in a batch with a *shared* step, chosen as
+    the minimum over all of them, so a single stiff trajectory slows the whole
+    batch down: at 128 cosmologies x 5 k the flat batch did not finish in ten
+    minutes, while n=16 and n=32 took 94 s and 138 s.  Per-k buckets restore
+    roughly linear scaling at the cost of a few extra integrations.  This is a
+    crude version of the step-size bucketing described in
+    docs/gpu_tensor_prior_art.md.
 
     Parameters
     ----------
@@ -110,6 +120,16 @@ def matter_power(cosmologies: CosmologyBatch, k_h, redshifts,
     reion = reionization or Reionization(tau=0.0544)
 
     n_c, n_k = len(cosmologies.h), k_h.size
+    if bucket_by_k and n_k > 1:
+        parts = [matter_power(cosmologies, [kk], redshifts, settings, reionization,
+                              use_cache, bucket_by_k=False) for kk in k_h]
+        return PowerResult(
+            k_h=k_h, z=parts[0].z,
+            delta_m=np.concatenate([p.delta_m for p in parts], axis=1),
+            delta_cdm=np.concatenate([p.delta_cdm for p in parts], axis=1),
+            delta_b=np.concatenate([p.delta_b for p in parts], axis=1),
+            n_steps=sum(p.n_steps for p in parts),
+        )
     sample = np.repeat(np.arange(n_c, dtype=np.int64), n_k)      # cosmology per trajectory
     k_mpc = (k_h[None, :] * cosmologies.h[:, None]).ravel()      # h/Mpc -> 1/Mpc
 
