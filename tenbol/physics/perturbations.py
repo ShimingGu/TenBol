@@ -142,7 +142,10 @@ class PerturbationBatch:
         gpres = (grho_g + grho_r) / 3.0 + p_nu_mass - grho_v
         hprime = -0.5 * h**2 * (1.0 + 3.0 * gpres / grho)
         ln_a = np.log(a)
-        tau = self._interp(self._tau_tab, ln_a)
+        # NOTE: _tau_grid is evaluated on the *thermal* ln-a grid, which is
+        # the grid `_interp` indexes; using bg._tau_table here silently
+        # mixes two different grids and corrupts 1/tau.
+        tau = self._interp(self._tau_grid, ln_a)
         # The pre-recombination opacity reaches ~1e100 /Mpc; above ~1e30 the
         # coupling is exactly the tight-coupling limit, and capping avoids
         # overflow in branch values that are discarded by the regime mask.
