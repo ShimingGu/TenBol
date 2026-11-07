@@ -273,12 +273,21 @@ class HMcode2020:
         with np.errstate(invalid="ignore", divide="ignore"):
             small = c * ks < 0.2
             out_small = 1.0 - ks ** 2 * m2 * norm / 6.0
+
             si1, ci1 = sici(ks)
             si2, ci2 = sici(ks2)
             s1, c1 = np.sin(ks), np.cos(ks)
             s2, c2 = np.sin(ks2), np.cos(ks2)
-            out_big = (c1 * (ci2 - ci1) + s1 * (si2 - si1)
-                       - (s2 * c1 - c2 * s1) / ks2) * norm
+
+            # For large arguments cos(ks)*(ci2 - ci1) suffers catastrophic
+            # cancellation because ci oscillates; halofit.f90 evaluates
+            # sin(c*ks) = sin(ks2 - ks) by angle subtraction instead.
+            wide = ks2 > 4.0
+            out_wide = (c1 * (ci2 - ci1) + s1 * (si2 - si1)
+                        - (s2 * c1 - c2 * s1) / ks2) * norm
+            out_near = (c1 * (ci2 - ci1) + s1 * (si2 - si1)
+                        - np.sin(c * ks) / ks2) * norm
+            out_big = np.where(wide, out_wide, out_near)
             out = np.where(small, out_small, out_big)
         return np.clip(np.nan_to_num(out, nan=0.0), 0.0, 1.0)
 
