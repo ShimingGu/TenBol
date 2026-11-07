@@ -77,13 +77,14 @@ def main() -> int:
     ap.add_argument("--n", type=int, default=16)
     ap.add_argument("--k", type=int, default=5)
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--chunk", type=int, default=32)
     args = ap.parse_args()
 
     k_h = np.geomspace(1e-3, 0.1, args.k)
     cosmo = draw(args.n)
 
     t0 = time.time()
-    res = matter_power(cosmo, k_h, [1000.0, 0.0])
+    res = matter_power(cosmo, k_h, [1000.0, 0.0], chunk_size=args.chunk)
     ours = res.growth(1000.0)[:, :, 1]           # (n_cosmo, n_k)
     t_ours = time.time() - t0
 

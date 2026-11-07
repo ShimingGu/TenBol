@@ -91,7 +91,8 @@ def matter_power(cosmologies: CosmologyBatch, k_h, redshifts,
                  settings: PerturbationSettings | None = None,
                  reionization: Reionization | None = None,
                  use_cache: bool = True,
-                 bucket_by_k: bool = True) -> PowerResult:
+                 bucket_by_k: bool = True,
+                 chunk_size: int | None = None) -> PowerResult:
     """Linear matter perturbations for every (cosmology, k, z) in one batch.
 
     ``bucket_by_k`` splits the integration into one batch per wavenumber.  The
@@ -120,6 +121,29 @@ def matter_power(cosmologies: CosmologyBatch, k_h, redshifts,
     reion = reionization or Reionization(tau=0.0544)
 
     n_c, n_k = len(cosmologies.h), k_h.size
+    if chunk_size and n_c > chunk_size:
+        # Split the cosmology axis.  The solver takes one shared step for the
+        # whole batch, so a large batch inherits the worst trajectory's step;
+        # chunking keeps each batch small enough to stay tractable (and mirrors
+        # the memory-driven batching a device backend needs anyway).
+        parts = []
+        for start in range(0, n_c, chunk_size):
+            stop = min(start + chunk_size, n_c)
+            sub = CosmologyBatch.from_columns(
+                h=cosmologies.h[start:stop], omega_b=cosmologies.omega_b[start:stop],
+                omega_c=cosmologies.omega_c[start:stop], A_s=cosmologies.A_s[start:stop],
+                n_s=cosmologies.n_s[start:stop],
+                m_nu=np.atleast_2d(cosmologies.m_nu)[start:stop],
+                N_eff=cosmologies.N_eff[start:stop])
+            parts.append(matter_power(sub, k_h, redshifts, settings, reionization,
+                                      use_cache, bucket_by_k, chunk_size=None))
+        return PowerResult(
+            k_h=k_h, z=parts[0].z,
+            delta_m=np.concatenate([p.delta_m for p in parts], axis=0),
+            delta_cdm=np.concatenate([p.delta_cdm for p in parts], axis=0),
+            delta_b=np.concatenate([p.delta_b for p in parts], axis=0),
+            n_steps=sum(p.n_steps for p in parts),
+        )
     if bucket_by_k and n_k > 1:
         parts = [matter_power(cosmologies, [kk], redshifts, settings, reionization,
                               use_cache, bucket_by_k=False) for kk in k_h]
