@@ -86,7 +86,15 @@ def linear_growth(bg, a_out, a_start: float = 3.0e-2):
     if not sol.success:
         raise RuntimeError(f"growth ODE failed: {sol.message}")
     d1 = float(sol.sol(0.0)[0])
-    d = sol.sol(np.log(a_out))[0]
+    a_clipped = np.maximum(a_out, a_start)
+    d = sol.sol(np.log(a_clipped))[0]
+    # Below a_start the solution cannot be integrated, but that region is deep
+    # in matter domination (radiation is 1% at a_start = 0.03) where D ~ a is
+    # accurate.  Without this, callers that tabulate from a = 1e-3 -- CAMB's
+    # amin_growth_interpolation -- would get a constant extrapolation and a
+    # non-monotonic table.
+    d_start = float(sol.sol(np.log(a_start))[0])
+    d = np.where(a_out < a_start, d_start * (a_out / a_start), d)
     # The batch axis: Background currently broadcasts a single cosmology, so the
     # solution is one trajectory; keep the (batch, len(a_out)) contract explicit.
     return np.atleast_2d(d / d1)

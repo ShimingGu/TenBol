@@ -29,6 +29,13 @@ __all__ = ["HMcode2020", "HMParameters"]
 
 # Fixed HMcode constants (halofit.f90 module data)
 PI = np.pi
+# CAMB's HMcode builds sigma(R) on a 64-point table in ln R over [1e-4, 1e3]
+# Mpc/h and interpolates with a cubic (halofit.f90 n_sigma_interpolation).
+# Reproducing that grid matters: our exact integral and CAMB's interpolated
+# table differ at the 0.1-1% level, which is the size of the residual we see.
+R_SIG_MIN = 1.0e-4
+R_SIG_MAX = 1.0e3
+N_SIG = 64
 M_MIN = 1.0            # Msun/h
 M_MAX = 1.0e18
 N_MASS = 256
@@ -194,8 +201,15 @@ class HMcode2020:
         dc = self._delta_c(self.z, self.omega_m, self.f_nu, x_t, y_t)
         dv = self._delta_v(self.z, self.omega_m, self.f_nu, x_t, y_t)
 
-        sig = self._sigma_r(r, cold=True) * d
-        sigf = self._sigma_r(r * F_BULLOCK, cold=True) * d
+        # sigma(R) through CAMB's 64-point ln R table, as its sigma_lut does.
+        # sig8_cold below stays an exact integral because CAMB computes that
+        # one with sigma_integral(8, 0, itype, cosm), not through the table.
+        r_tab = np.geomspace(R_SIG_MIN, R_SIG_MAX, N_SIG)
+        sig_tab = self._sigma_r(r_tab, cold=True)
+        lut = CubicSpline(np.log(r_tab), np.log(np.maximum(sig_tab, 1e-300)),
+                          extrapolate=True)
+        sig = np.exp(lut(np.log(r))) * d
+        sigf = np.exp(lut(np.log(r * F_BULLOCK))) * d
         nu = dc / sig
 
         # Non-linear scale: nu(r_nl) = 1
@@ -224,7 +238,12 @@ class HMcode2020:
         # ``growth`` must accept an array: evaluating it per point would mean
         # hundreds of ODE integrations per redshift.
         g_grid = np.atleast_1d(np.asarray(self.growth(a_grid), dtype=np.float64)).ravel()
-        a_f = np.interp(target, g_grid, a_grid, left=a_grid[0], right=a_grid[-1])
+        # CAMB inverts the growth table with interp_cubic_sorted (zcoll_bull);
+        # linear interpolation here shifts the formation redshifts and through
+        # them the concentrations.  g(a) is strictly increasing, so a cubic in
+        # (g -> a) is well defined.
+        spl_af = CubicSpline(g_grid, a_grid, extrapolate=True)
+        a_f = spl_af(np.clip(target, g_grid[0], g_grid[-1]))
         a_f = np.where(target <= g_grid[0], a_grid[0], a_f)
         z_f = 1.0 / a_f - 1.0
         z_f = np.where(target > d, self.z, z_f)      # halo forms in the future
