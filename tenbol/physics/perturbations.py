@@ -133,7 +133,7 @@ class PerturbationBatch:
         inv_a = 1.0 / a
         # self.mu0 is already per-trajectory (T,), so it needs its own axis;
         # a[:, None] * self.mu0 would broadcast to (T, T) for T > 1.
-        mu = np.maximum(a * self.mu0, 1e-12)
+        mu = np.maximum(a[:, None] * self.mu0, 1e-12)
         rho = np.exp(self._rho_spl(np.log(mu)))
         pnu = np.exp(self._p_spl(np.log(mu)))
         grho_nu_mass = np.sum(self.grho_nu_unit * self.degeneracy * rho, axis=1) * inv_a**2
@@ -158,7 +158,7 @@ class PerturbationBatch:
         kappa = np.minimum(self._interp(self._kap_tab, ln_a), 1.0e30)
         dopacity = self._interp(self._dkap_tab, ln_a) * h   # dkappa/dtau
         cs2 = self._interp(self._cs2_tab, ln_a)
-        am = np.maximum(a * self.mu0, 1e-30)
+        am = np.maximum(a[:, None] * self.mu0, 1e-30)
         vnu = 1.0 / np.sqrt(1.0 + (am[:, :, None] / NU_Q[None, None, :]) ** 2)
         return {
             "h": h, "hprime": hprime, "gpres": gpres, "tau": tau,
