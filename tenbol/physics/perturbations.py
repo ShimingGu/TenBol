@@ -257,7 +257,11 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None):
     wq = w[None, :, None]
     den = np.sum(wq * epsT, axis=1)                       # (S, T)
     clxnu = np.sum(wq * epsT * Fnu[..., 0, :], axis=1) / den
-    qnu = np.sum(wq * Fnu[..., 1, :], axis=1) / np.sum(w)
+    # CAMB normalises the massive-neutrino heat flux by the same weighted
+    # energy sum as the density (Nu_Integrate_L01: fnu/rhonu), i.e. by
+    # sum(w * eps), not by sum(w); the two differ whenever the modes are
+    # relativistic.
+    qnu = np.sum(wq * Fnu[..., 1, :], axis=1) / np.sum(wq * epsT, axis=1)
     dgrho_nu = np.sum(grho_spT * clxnu, axis=0)
     dgq_nu = np.sum(grho_spT * qnu, axis=0)
 
