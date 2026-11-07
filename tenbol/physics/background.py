@@ -286,7 +286,10 @@ class Background:
         from scipy.integrate import cumulative_simpson
 
         ln_a = np.linspace(np.log(1.0e-9), np.log(2.0), 6000)
-        a = np.exp(ln_a)[None, :]                # (1, N) -> broadcast to (B, N)
+        # Build the (B, N) grid explicitly.  A (1, N) array would be re-broadcast
+        # by _a() to (B, 1, N) whenever B > 1, adding a spurious axis that breaks
+        # np.gradient below -- this only shows up for batches.
+        a = np.broadcast_to(np.exp(ln_a), (self.B, ln_a.size))
         dtau_dlna = 1.0 / self.hubble(a)          # dtau/dln a = 1/H_hat
         tau = cumulative_simpson(dtau_dlna, x=ln_a, axis=-1, initial=0.0)
         tau0 = np.exp(2 * ln_a[0]) / (2.0 * np.sqrt(self.grho_r0))
@@ -303,20 +306,22 @@ class Background:
         """
         a, ndim = self._a(a)
         shape = a.shape[1:]
-        ln_a = np.log(a).ravel()
         lo, hi = self._tau_ln_a[0], self._tau_ln_a[-1]
         if np.any(a > np.exp(hi)):
             raise ValueError("tau(a) requested beyond the background table")
+        # Keep the sample axis explicit: with a flat index the fancy-index
+        # self._tau_table[:, i] would produce (B, B*M) instead of (B, M).
+        ln_a = np.log(a).reshape(self.B, -1)
         ln_clip = np.clip(ln_a, lo, hi)
         tab = self._tau_ln_a
         i = np.clip(np.searchsorted(tab, ln_clip) - 1, 0, len(tab) - 2)
         x0 = tab[i]
         h = tab[i + 1] - x0
         t = (ln_clip - x0) / h
-        y0 = self._tau_table[:, i]
-        y1 = self._tau_table[:, i + 1]
-        m0 = self._tau_slope[:, i] * h
-        m1 = self._tau_slope[:, i + 1] * h
+        y0 = np.take_along_axis(self._tau_table, i, axis=1)
+        y1 = np.take_along_axis(self._tau_table, i + 1, axis=1)
+        m0 = np.take_along_axis(self._tau_slope, i, axis=1) * h
+        m1 = np.take_along_axis(self._tau_slope, i + 1, axis=1) * h
         out = (
             y0 * (2 * t**3 - 3 * t**2 + 1)
             + y1 * (-2 * t**3 + 3 * t**2)
