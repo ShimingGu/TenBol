@@ -1,0 +1,61 @@
+{
+  "what": "linear growth ratio delta(z)/delta(z=1000) relative to CAMB 2.0.5",
+  "reference": "CAMB 2.0.5, transfer delta_tot, same cosmology",
+  "cosmology": {
+    "h": 0.67,
+    "omega_b": 0.0224,
+    "omega_c": 0.12,
+    "A_s": 2.1e-09,
+    "n_s": 0.965,
+    "m_nu_sum": 0.06,
+    "N_eff": 3.046
+  },
+  "commit": "1bff1a3",
+  "steps": 12585,
+  "rows": [
+    {
+      "k_h_per_mpc": 0.001,
+      "z2.0": 1.0007,
+      "z1.0": 1.0007,
+      "z0.5": 1.0008,
+      "z0.0": 1.0007
+    },
+    {
+      "k_h_per_mpc": 0.0031,
+      "z2.0": 1.0032,
+      "z1.0": 1.0032,
+      "z0.5": 1.0032,
+      "z0.0": 1.0031
+    },
+    {
+      "k_h_per_mpc": 0.0098,
+      "z2.0": 1.003,
+      "z1.0": 1.0029,
+      "z0.5": 1.0028,
+      "z0.0": 1.0027
+    },
+    {
+      "k_h_per_mpc": 0.0306,
+      "z2.0": 0.9866,
+      "z1.0": 0.9865,
+      "z0.5": 0.9864,
+      "z0.0": 0.9863
+    },
+    {
+      "k_h_per_mpc": 0.0959,
+      "z2.0": 0.9831,
+      "z1.0": 0.9831,
+      "z0.5": 0.9831,
+      "z0.0": 0.9831
+    },
+    {
+      "k_h_per_mpc": 0.3,
+      "z2.0": 0.9921,
+      "z1.0": 0.9923,
+      "z0.5": 0.9924,
+      "z0.0": 0.9925
+    }
+  ],
+  "max_abs_deviation": 0.0169,
+  "verdict": "m1d NOT met at 0.5%: worst point is k=0.096 h/Mpc at 1.7%; the deviation is scale-dependent but z-independent to 1e-4, so the growth factor is right and the residual is in the transfer shape."
+}
