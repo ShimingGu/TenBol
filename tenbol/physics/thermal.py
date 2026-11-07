@@ -364,10 +364,12 @@ class ThermalHistory:
         """Thomson opacity ``a n_e sigma_T`` [1/Mpc]."""
         a = np.atleast_1d(np.asarray(a, dtype=np.float64))
         xe = self.x_e(a)
-        # kappa = a n_e sigma_T in 1/Mpc: n_e in m^-3, sigma_T in m^2, so the
-        # conversion to 1/Mpc is a single factor of MPC_M.
+        # Conformal Thomson opacity: kappa = a * n_e * sigma_T with the physical
+        # electron density n_e = N_H0 * xe / a^3, so kappa = sigma_T * N_H0 *
+        # xe * a * ... i.e. it scales as a^-2.  SIGMA_THOMSON is in m^2 and
+        # N_H0 in m^-3, hence the single MPC_M factor converting 1/m to 1/Mpc.
         ne_m3 = self.bg.N_H0[:, None] * xe / a[None, :] ** 3
-        return SIGMA_THOMSON * MPC_M * ne_m3 / a[None, :]
+        return SIGMA_THOMSON * MPC_M * ne_m3 * a[None, :]
 
     def cs2_b(self, a):
         """Baryon adiabatic sound speed squared (c = 1)."""

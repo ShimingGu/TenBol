@@ -586,6 +586,9 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
                           f"ratio_zdot={(-dcp)/(dc*hh):.4f} "
                           f"etak={float(Y[L.scalar('etak')][j]): .4e} "
                           f"qg={float(Y[L.scalar('qg')][j]): .4e} "
+                          f"db={float(Y[L.scalar('db')][j]): .4e} "
+                          f"dbp={float(k1[L.scalar('db')][j]): .4e} "
+                          f"dcp={float(k1[L.scalar('dc')][j]): .4e} "
                           f"vb={float(Y[L.scalar('vb')][j]): .4e} "
                           f"zmet={zmet2: .4e} sigma={sigma: .4e} vnewt={vnewt: .4e}", flush=True)
                     batch._probe_list.remove(tgt)
