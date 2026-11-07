@@ -73,7 +73,7 @@ class PerturbationSettings:
     # CAMB applies the late radiation truncation only for k > 0.03 /Mpc
     # (DoLateRadTruncation with latePhotSwitchBoost); below that the photon
     # hierarchy is integrated to z = 0.
-    rsa_kmin: float = 0.03
+    rsa_kmin: float = 0.0
     rsa_kmin_r: float = 0.0
     max_steps: int = 400000
     h_start: float = 1.0e-4
