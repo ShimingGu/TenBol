@@ -186,7 +186,7 @@ def reference_run(
     if want_transfer:
         tr = res.get_matter_transfer_data()
         names = ["delta_cdm", "delta_baryon", "delta_photon", "delta_neutrino",
-                 "delta_tot", "delta_nonu", "v_baryon_cdm"]
+                 "delta_tot", "delta_nonu", "v_baryon_cdm", "v_newtonian_baryon"]
         zcols = np.asarray(p.Transfer.PK_redshifts)[: tr.transfer_data.shape[2]]
         zorder = np.argsort(zcols)[::-1]        # transfer columns are reversed
         zcols = zcols[zorder]
