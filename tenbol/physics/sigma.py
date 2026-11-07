@@ -20,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.integrate import solve_ivp
 
-__all__ = ["linear_growth", "sigma_r", "sigma8", "top_hat_window"]
+__all__ = ["linear_growth", "growth_terms", "sigma_r", "sigma8", "top_hat_window"]
 
 
 def _omega_m(bg, a):
@@ -64,11 +64,12 @@ def linear_growth(bg, a_out, a_start: float = 1.0e-3):
         d = y[0]
         dd = y[1]
         h = float(np.ravel(bg.hubble(a))[0])
-        # ``hubble_prime`` is d(H_hat)/d(tau); converting to d/d ln a gives
-        # d(H_hat)/d ln a = (dH_hat/dtau) * (dtau/dln a) = hp / H_hat, hence
-        # d ln H_hat / d ln a = hp / H_hat**2.
+        # ``hubble_prime`` is d(H_hat)/d(tau), so d ln H_hat / d ln a = hp/H_hat**2.
+        # The growth equation wants d ln H / d ln a for the *physical* H = H_hat/a,
+        # which is that minus one: for EdS this gives -1.5, the value that makes
+        # D ~ a an exact solution.
         hp = float(np.ravel(bg.hubble_prime(a))[0])
-        dlnh = hp / h ** 2
+        dlnh = hp / h ** 2 - 1.0
         om = _omega_m(bg, a)
         return np.array([dd, -(2.0 + dlnh) * dd + 1.5 * om * d])
 
@@ -128,3 +129,35 @@ def sigma_r(k, pk, r):
 def sigma8(k, pk):
     """``sigma(R = 8 Mpc/h)``."""
     return float(sigma_r(k, pk, 8.0)[0])
+
+
+def growth_terms(bg, z, a_start: float = 1.0e-3, n_tab: int = 512):
+    """Mead (2017) growth terms ``x`` and ``y`` at redshift ``z``.
+
+    CAMB's HMcode fits (``dc_Mead``, ``Dv_Mead``) are written in terms of
+
+        x = g(z) / a,   y = G(z) / a,
+        g(a) = growth normalised so that g = a deep in the matter era,
+        G(a) = integral_0^a g(a') / a' da',
+
+    both of which equal 1 for an Einstein-de Sitter universe.  ``g`` is built
+    from the same normalised growth factor ``linear_growth`` returns, so the two
+    services cannot drift apart: ``g(a) = gnorm * D(a)`` with ``gnorm`` fixed by
+    the matter-era condition ``g(a_start) = a_start``.
+    """
+    a_tab = np.linspace(a_start, 1.0, n_tab)
+    d_tab = linear_growth(bg, a_tab)[0]
+    gnorm = a_start / d_tab[0]                  # g(a_start) = a_start
+    g = gnorm * d_tab
+
+    # G(a) = int_0^a g/a' da'; below a_tab[0] the ratio g/a' -> 1 and contributes g[0].
+    over_a = g / a_tab
+    g_acc = np.empty(n_tab)
+    g_acc[0] = g[0]
+    g_acc[1:] = g[0] + np.cumsum(
+        0.5 * (over_a[1:] + over_a[:-1]) * np.diff(a_tab))
+
+    a = 1.0 / (1.0 + float(z))
+    g_z = float(np.interp(a, a_tab, g))
+    G_z = float(np.interp(a, a_tab, g_acc))
+    return g_z / a, G_z / a, gnorm
