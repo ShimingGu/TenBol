@@ -576,13 +576,18 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
                     hh = float(c["h"][j]); kk = float(batch.k[j])
                     dm = float(Y[L.scalar("dc")][j])
                     zmet = -dcp / kk                      # from delta_c' = -k z
+                    dzk = float(k1[L.scalar("etak")][j])      # d(etak)/dln a
+                    zmet2 = zmet
+                    sigma = zmet2 + 3.0 * hh * dzk / kk ** 2
+                    vnewt = -kk * (float(Y[L.scalar("vb")][j]) + sigma) / hh
                     print(f"PROBE a={float(a[j]):.3e} z={1/float(a[j])-1:8.1f} "
                           f"dc={dc: .4e} dc'={dcp: .4e} dm={dm: .4e} "
                           f"zmet={zmet: .4e} z_poisson={zmet:.3e} "
                           f"ratio_zdot={(-dcp)/(dc*hh):.4f} "
                           f"etak={float(Y[L.scalar('etak')][j]): .4e} "
                           f"qg={float(Y[L.scalar('qg')][j]): .4e} "
-                          f"vb={float(Y[L.scalar('vb')][j]): .4e}", flush=True)
+                          f"vb={float(Y[L.scalar('vb')][j]): .4e} "
+                          f"zmet={zmet2: .4e} sigma={sigma: .4e} vnewt={vnewt: .4e}", flush=True)
                     batch._probe_list.remove(tgt)
 
         # regime switches: install the CAMB tight-coupling exit values
