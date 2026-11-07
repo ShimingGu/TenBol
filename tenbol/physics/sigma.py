@@ -31,7 +31,7 @@ def _omega_m(bg, a):
     return float(np.ravel(matter / total)[0])
 
 
-def linear_growth(bg, a_out, a_start: float = 1.0e-3):
+def linear_growth(bg, a_out, a_start: float = 1.0e-2):
     """Scale-independent linear growth factor ``D(a)``, normalised to ``D(1) = 1``.
 
     Solves
@@ -41,9 +41,12 @@ def linear_growth(bg, a_out, a_start: float = 1.0e-3):
         D'' + (2 + d\\ln\\mathcal{H}/d\\ln a)\\,D' = \\tfrac{3}{2}\\Omega_m(a)\\,D
 
     with primes denoting ``d/d ln a``.  The initial condition is the
-    matter-era solution ``D ∝ a``, imposed deep enough that the decaying mode
-    has died away; the residual is below 1e-6 in ``D`` for the workload's
-    ``a_start``.
+    matter-era solution ``D ∝ a``.  ``a_start`` must sit where radiation is
+    negligible: at a = 1e-3 (z ~ 1000) radiation is still 31% of the density,
+    D ∝ a is not the growing solution there, and imposing it biases the
+    normalisation gnorm = g(a=1) low by 7% (0.726 against 0.783).  HMcode's
+    Mead(2017) fits read that normalisation directly as their ``x`` term, so
+    the error propagates into delta_c and Delta_v.
 
     Parameters
     ----------
@@ -131,7 +134,7 @@ def sigma8(k, pk):
     return float(sigma_r(k, pk, 8.0)[0])
 
 
-def growth_terms(bg, z, a_start: float = 1.0e-3, n_tab: int = 512):
+def growth_terms(bg, z, a_start: float = 1.0e-2, n_tab: int = 512):
     """Mead (2017) growth terms ``x`` and ``y`` at redshift ``z``.
 
     CAMB's HMcode fits (``dc_Mead``, ``Dv_Mead``) are written in terms of
