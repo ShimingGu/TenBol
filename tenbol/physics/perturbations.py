@@ -436,21 +436,46 @@ def _event_times(batch: "PerturbationBatch", a0, a1):
     return out
 
 
-def _record_rows(rec, Y, c, rows, idx, layout: StateLayout):
+def _take(c, idx, n_total):
+    """Select trajectory `idx` out of a coefficient dict of length ``n_total``."""
+    out = {}
+    for key, val in c.items():
+        arr = np.asarray(val)
+        out[key] = arr[idx] if arr.ndim >= 1 and arr.shape[0] == n_total else val
+    return out
+
+
+def _record_rows(rec, Y, c, rec_rows, idx, layout: StateLayout):
+    """Record a (possibly interpolated) state slice into the output arrays.
+
+    ``Y`` has shape ``(D, n)`` and ``c`` is already sliced to those ``n``
+    trajectories; ``rec_rows`` are the output rows they map to.
+    """
     for key in ("dc", "db", "dg", "dr", "vb", "qg", "qr", "etak"):
-        rec[key][rows, idx] = Y[layout.scalar(key)][rows]
-    grho_b, grho_c = c["grho_b"][rows], c["grho_c"][rows]
-    grho = c["grho_nu_species"][rows]                     # (n_rows, S)
+        rec[key][rec_rows, idx] = Y[layout.scalar(key)]
+    grho_b, grho_c = c["grho_b"], c["grho_c"]
+    grho = c["grho_nu_species"]                          # (n, S)
     n_s, n_q, n_l = layout.n_species, layout.n_q, layout.lmax_nu + 1
-    Fnu = Y[layout.offsets["Fnu"]][:, rows].reshape(n_s, n_q, n_l, len(rows))
-    epsT = np.transpose(1.0 / c["vnu"][rows], (1, 2, 0))
+    Fnu = Y[layout.offsets["Fnu"]].reshape(n_s, n_q, n_l, Y.shape[1])
+    epsT = np.transpose(1.0 / c["vnu"], (1, 2, 0))
     wq = NU_W[None, :, None]
     den = np.sum(wq * epsT, axis=1)
     clxnu = np.sum(wq * epsT * Fnu[..., 0, :], axis=1) / den
-    dgrho_nu = np.sum(grho.T * clxnu, axis=0)
-    rec["dm"][rows, idx] = (grho_c * Y[layout.scalar("dc")][rows]
-                            + grho_b * Y[layout.scalar("db")][rows]
-                            + dgrho_nu) / (grho_c + grho_b + np.sum(grho, axis=1))
+    dgrho_nu = np.sum(np.asarray(grho).T * clxnu, axis=0)
+    rec["dm"][rec_rows, idx] = (grho_c * Y[layout.scalar("dc")]
+                                + grho_b * Y[layout.scalar("db")]
+                                + dgrho_nu) / (grho_c + grho_b + np.sum(grho, axis=1))
+
+
+def _hermite(Y0, Y1, f0, f1, delta, theta):
+    """Cubic Hermite interpolation inside one step (dense output)."""
+    t = theta[None, :]
+    h00 = 2 * t ** 3 - 3 * t ** 2 + 1
+    h10 = t ** 3 - 2 * t ** 2 + t
+    h01 = -2 * t ** 3 + 3 * t ** 2
+    h11 = t ** 3 - t ** 2
+    d = delta[None, :]
+    return h00 * Y0 + h10 * d * f0 + h01 * Y1 + h11 * d * f1
 
 
 def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
@@ -490,10 +515,10 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
         if total_steps > s.max_steps:
             raise NumericalFailure("perturbation integration exceeded max_steps")
 
-        target = np.full(T, a_end)
-        has_out = next_out < n_out
-        target = np.where(has_out, np.minimum(target, a_out[np.minimum(next_out, n_out - 1)]), target)
-        target = np.minimum(target, np.where(pending > a, pending, a_end))
+        # Only regime switches and the end time constrain the step; requested
+        # output scale factors are handled by dense output (see _hermite), so
+        # the solution does not depend on which redshifts the caller asks for.
+        target = np.minimum(np.full(T, a_end), np.where(pending > a, pending, a_end))
         dln_target = np.where(target > a, np.log(np.maximum(target, 1e-300) / a), 0.0)
         tcu = c["kappa"] > (batch.k / s.tc_epsilon)
         dtau = 1.0 / c["h"]
@@ -509,6 +534,8 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
         h = np.where(done, 0.0, h)
 
         hn = h[None, :]
+        a_prev = a.copy()
+        Y_prev = Y
         k1 = rhs(Y, a, batch, c)
         k2 = rhs(Y + 0.5 * hn * k1, a * np.exp(0.5 * h), batch)
         k3 = rhs(Y + 0.5 * hn * k2, a * np.exp(0.5 * h), batch)
@@ -546,9 +573,16 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
                 break
             rows = np.nonzero(ready)[0]
             idx = next_out[rows]
+            a_tgt = a_out[idx]
+            # interpolate from the step just taken: a_prev -> a
+            theta = np.clip((np.log(a_tgt) - np.log(a_prev[rows])) / h[rows], 0.0, 1.0)
+            Ymid = _hermite(Y_prev[:, rows], Y[:, rows], k1[:, rows], k4[:, rows],
+                            h[rows], theta)
+            cm = _take(c, rows, T)
             for j in np.unique(idx):
-                sel = rows[idx == j]
-                _record_rows(rec, Y, c, sel, int(j), L)
+                sel_j = np.nonzero(idx == j)[0]
+                _record_rows(rec, Ymid[:, sel_j], _take(cm, sel_j, len(rows)),
+                             rows[sel_j], int(j), L)
             next_out[rows] += 1
         done = a >= a_end - 1e-14
     for key in rec:
