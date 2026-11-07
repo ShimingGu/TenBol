@@ -185,53 +185,16 @@ def reference_run(
     }
     if want_transfer:
         tr = res.get_matter_transfer_data()
-        names = [
-            "delta_cdm",
-            "delta_baryon",
-            "delta_photon",
-            "delta_neutrino",
-            "delta_tot",
-            "delta_nonu",
-        ]
+        names = ["delta_cdm", "delta_baryon", "delta_photon", "delta_neutrino",
+                 "delta_tot", "delta_nonu"]
+        zcols = np.asarray(p.Transfer.PK_redshifts)[: tr.transfer_data.shape[2]]
+        zorder = np.argsort(zcols)[::-1]        # transfer columns are reversed
+        zcols = zcols[zorder]
+        order_z = np.argsort(zcols)             # ascending, matches `out["z"]`
         out["transfer"] = {
-            name: np.array(tr.transfer_data[camb.model.transfer_names.index(name), :, :])
+            name: np.array(tr.transfer_data[camb.model.transfer_names.index(name), :, :])[:, order_z]
             for name in names
         }
         out["transfer_q"] = np.asarray(tr.q)
-        out["transfer_redshifts"] = np.asarray(p.Transfer.PK_redshifts)[: out["transfer"]["delta_cdm"].shape[2]]
+        out["transfer_z"] = zcols[order_z]      # ascending, same order as out["z"]
     return out
-
-
-# --------------------------------------------------------------------------
-# Parallel reference batches
-# --------------------------------------------------------------------------
-
-_WORKER_SETTINGS: ReferenceSettings | None = None
-
-
-def _init_worker(settings: ReferenceSettings):
-    global _WORKER_SETTINGS
-    _WORKER_SETTINGS = settings
-
-
-def _worker(args):
-    cosmo, redshifts = args
-    return reference_run(cosmo, _WORKER_SETTINGS, redshifts=redshifts)
-
-
-def reference_batch(cosmologies, settings: ReferenceSettings, redshifts=(0.0, 0.5, 1.0, 2.0),
-                    workers: int = 1, pool=None):
-    """Evaluate a batch of cosmologies.  ``pool`` may be an existing
-    ``multiprocessing.Pool`` created with ``initializer=_init_worker``."""
-    args = [(c, redshifts) for c in cosmologies]
-    if pool is not None:
-        return pool.map(_worker, args)
-    if workers <= 1:
-        _init_worker(settings)
-        return [_worker(a) for a in args]
-    import multiprocessing as mp
-    # "spawn" avoids fork-while-holding-BLAS/OpenMP locks, which deadlocks when
-    # the parent has already run CAMB.
-    ctx = mp.get_context("spawn")
-    with ctx.Pool(workers, initializer=_init_worker, initargs=(settings,)) as pool_:
-        return pool_.map(_worker, args)
