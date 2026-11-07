@@ -70,6 +70,11 @@ class PerturbationSettings:
     rsa_ktau: float = 30.0
     rsa_ktau_nu: float = 30.0
     rsa_ktau_r: float = 30.0
+    # CAMB applies the late radiation truncation only for k > 0.03 /Mpc
+    # (DoLateRadTruncation with latePhotSwitchBoost); below that the photon
+    # hierarchy is integrated to z = 0.
+    rsa_kmin: float = 0.03
+    rsa_kmin_r: float = 0.0
     max_steps: int = 400000
     h_start: float = 1.0e-4
     dlna_max: float = 0.005
@@ -258,8 +263,8 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None):
 
     tcu = kappa > (k / s.tc_epsilon)
     ktau = k * tau
-    rsa_g = ktau > s.rsa_ktau
-    rsa_r = ktau > s.rsa_ktau_nu
+    rsa_g = (ktau > s.rsa_ktau) & (k > s.rsa_kmin)
+    rsa_r = (ktau > s.rsa_ktau_nu) & (k > s.rsa_kmin_r)
 
     # ---- radiation streaming approximation ----------------------------
     zm = (0.5 * dgrho_matter / k + etak) / h
@@ -414,8 +419,8 @@ def _event_times(batch: "PerturbationBatch", a0, a1):
     out = {}
     for name, ref, extra in (
         ("tc", kap, k / s.tc_epsilon),
-        ("rsa_g", k * tau, np.full_like(kap, s.rsa_ktau)),
-        ("rsa_r", k * tau, np.full_like(kap, s.rsa_ktau_r)),
+        ("rsa_g", k * tau, np.where(k > s.rsa_kmin, s.rsa_ktau, np.inf)),
+        ("rsa_r", k * tau, np.where(k > s.rsa_kmin_r, s.rsa_ktau_r, np.inf)),
     ):
         diff = ref - extra
         change = np.sign(diff[:, :-1]) != np.sign(diff[:, 1:])
