@@ -118,6 +118,7 @@ class HMcode2020:
         self._spl_cold = CubicSpline(self._lnk, self._lnp_cold, extrapolate=True)
 
         self._build_tables()
+        self._build_wiggle()
 
     # -- linear spectrum -------------------------------------------------
     def _delta2(self, k, cold=True):
@@ -291,6 +292,41 @@ class HMcode2020:
             out = np.where(small, out_small, out_big)
         return np.clip(np.nan_to_num(out, nan=0.0), 0.0, 1.0)
 
+    def _build_wiggle(self):
+        """Isolate the BAO wiggle as P(k) minus its Gaussian-smoothed version.
+
+        halofit.f90's calculate_psmooth smooths P/P_nowiggle with a Gaussian of
+        width ``wiggle_sigma = 0.25`` in log k; smoothing log P directly over the
+        same width gives the same broadband component to the accuracy that
+        matters here, and avoids porting the Eisenstein & Hu no-wiggle fit.
+        """
+        lnk = self._lnk
+        dlnk = float(np.median(np.diff(lnk)))
+        if dlnk <= 0.0:
+            self._p_wiggle = np.zeros_like(self.p_lin)
+            self._sigv = 0.0
+            return
+        lnp = np.log(self.p_lin)
+        # Gaussian smoothing in ln k with sigma = 0.25 (pixels = sigma / dlnk)
+        n = lnp.size
+        half = max(1, int(np.ceil(4.0 * 0.25 / dlnk)))
+        x = np.arange(-half, half + 1) * dlnk
+        ker = np.exp(-0.5 * (x / 0.25) ** 2)
+        ker /= ker.sum()
+        lnp_s = np.convolve(np.pad(lnp, half, mode="edge"), ker, mode="same")[half:half + n]
+        self._p_wiggle = np.exp(lnp) - np.exp(lnp_s)
+
+        # Velocity dispersion sigma_v^2 = (1/6pi^2) int dk P(k), R -> 0 limit of
+        # CAMB's sigmaV; sets how fast the wiggle is damped away.
+        self._sigv = float(np.sqrt(max(np.trapezoid(self.p_lin, self.k_lin) / (6.0 * PI ** 2), 0.0)))
+
+    def _dewiggle(self, k, d2_lin):
+        """Linear Delta^2 with the BAO wiggle damped by exp(-(k sigma_v)^2)."""
+        pw = np.interp(np.log(k), self._lnk, self._p_wiggle, left=0.0, right=0.0)
+        f = np.exp(-(k * self._sigv) ** 2)
+        d2_w = pw * k ** 3 / (2.0 * PI ** 2) * self._d ** 2
+        return d2_lin + (f - 1.0) * d2_w
+
     def _p_1h(self, k):
         k = np.atleast_1d(np.asarray(k, dtype=np.float64))
         w = self._window(k * self._nu_eta[:, None])
@@ -305,7 +341,7 @@ class HMcode2020:
         k = np.atleast_1d(np.asarray(k, dtype=np.float64))
         frac = self.params.fdamp
         x = (k / self.params.k_damp) ** 2.85
-        return d2_lin * (1.0 - frac * x / (1.0 + x))
+        return self._dewiggle(k, d2_lin) * (1.0 - frac * x / (1.0 + x))
 
     def power(self, k):
         """Non-linear matter power ``P(k)`` at this redshift, ``(Mpc/h)³``."""
