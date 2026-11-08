@@ -138,3 +138,43 @@ qg 非零就意味着 l = 2 有源。
 2. 核对 `L.fg(2) == 9`（etak 行）这件事是否也在 `dY` 侧造成越界写：`fg(2)` 应为
    pig（行 5），当前实现返回 9，所以 `dY[L.fg(2)]` 若被写会覆盖 etak。
 3. 只有在 (1)(2) 都确认无误之后，才去讨论 k = 1 h/Mpc 的 2.5e148 发散。
+
+## 更正：光子层级的"冻结"是正确行为，不是缺陷
+
+上一节说 `Fg/G/Fnu` 恒为零是缺陷，**这个判断是错的**，记录如下以免重蹈。
+
+### 证据
+
+`rhs` 内部打印（a = 1e-2，k = 0.15 h/Mpc）：
+
+```
+DBG pig: tcu=[False] rsa_g=[True] qg_e=[4.63] pig=[-0.0593]
+         polter=[-0.0318] kappa=[1.06e-06] sigma=[-3.476]
+         pig_dot=[0.00052667]
+dY[pig] = 0.0
+```
+
+即 `rsa_g` 在函数内部是 True，`np.where(tcu | rsa_g, 0.0, pig_dot)` 把导数清零。
+冻结确实在发生，且由 RSA 判据触发。
+
+### 为什么这样是对的
+
+试把光子 RSA 判据改成"用剩余共形时间"（`rsa_g = k*tau_rem < rsa_ktau`，
+与 `inv_tau = 1/tau_rem` 保持一致），结果：
+
+```
+FAIL NumericalFailure non-finite perturbation state at a=2.429e-03, k=6.700e-01
+```
+
+在 a = 2.4e-3、k = 0.67 /Mpc 处，`k*tau_rem ≈ 9500`。要解析这个层级需要
+lmax ~ 9500 阶，而 `lmax_g = 24`，必然发散。
+
+也就是说：**累积形式 `ktau = k*tau` 的 RSA 判据，正是让光子层级在解耦后及时
+冻结、从而把 lmax 压在 24 阶的机制**。换成剩余形式就把这个保护拿掉了。
+
+### 后续若要提高高 k 精度，正确方向是
+
+让 `lmax_g` 随 `k*tau_rem` 增长（CAMB 的 `lmaxg` 就是这么做的），而不是
+放开 RSA 而保持 lmax 不变。这需要在 `StateLayout` 上引入按 k 分桶的可变
+lmax —— 与本项目"dense Y[D,T]、Y 形状批不变"的既有约束冲突，属于架构级改动，
+应单独立项。
