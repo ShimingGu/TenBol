@@ -280,7 +280,7 @@ def _l_coeff(k, l):
     return k * l / (2.0 * l + 1.0), k * (l + 1.0) / (2.0 * l + 1.0)
 
 
-def rhs(Y, a, batch: "PerturbationBatch", c=None):
+def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     """Right-hand side on the dense state tensor.
 
     Returns ``dY`` with the same ``(D, T)`` shape, holding ``dY/dln a``.
@@ -382,6 +382,8 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None):
 
     # ---- baryon velocity: tight coupling or full equation -------------
     pig_tc = 32.0 / 45.0 / np.maximum(kappa, 1e-300) * k * (sigma + vb)
+    if capture is not None:
+        capture["pig_tc"] = pig_tc
     dg_dot = -k * (4.0 / 3.0 * z + qg_e)
     adotdota = (h ** 2 - c["gpres"]) / 2.0
     pb43 = 4.0 / 3.0 * grho_g / grho_b
@@ -711,12 +713,24 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
             # only trajectories whose *current* pending event is this switch
             hit = (~done) & (next_ev == j) & (a >= pending)
             if name == "tc" and np.any(hit):
-                kap = np.maximum(c["kappa"][hit], 1e-300)
-                pig_tc = Y[L.scalar("pig")][hit]
-                f3 = 3.0 / 7.0 * pig_tc * batch.k[hit] / kap
-                Y[L.fg(3), hit] = f3
+                # CAMB's GaugeInterface_ScalEv installs the tight-coupling
+                # values when it leaves tight coupling (equations.f90:355-367):
+                #     y(g_ix + 2) = EV%pig            ! the quadrupole itself
+                #     y(polind+2) = EV%pig/4
+                #     y(polind+3) = y(g_ix + 3)/4
+                # EV%pig is the value pig = 32/45/opacity*k*(sigma+vb) from the
+                # last tight-coupled evaluation.  We used to read
+                # Y[L.scalar("pig")], but the pig ROW IS CLAMPED TO ZERO while
+                # tcu is true (dY[pig] = where(tcu|rsa_g, 0, pig_dot)), so the
+                # switch installed a zero quadrupole and the acoustic
+                # oscillation restarted from the wrong amplitude.  Recompute it
+                # from the current state instead.
+                cap = {}
+                rhs(Y, a, batch, c, capture=cap)
+                pig_tc = np.asarray(cap["pig_tc"])[hit]
+                Y[L.scalar("pig"), hit] = pig_tc
                 Y[L.g(2), hit] = pig_tc / 4.0
-                Y[L.g(3), hit] = f3 / 4.0
+                Y[L.g(3), hit] = Y[L.fg(3)][hit] / 4.0
         advanced = (~done) & (a >= pending)
         if np.any(advanced):
             next_ev = np.where(advanced, next_ev + 1, next_ev)

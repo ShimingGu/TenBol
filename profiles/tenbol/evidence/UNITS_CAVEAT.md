@@ -349,3 +349,21 @@ tau_switch_no_nu_multpoles = max(15/k * switchBoost, min(taurend, matter_verydom
 另：把中微子完全解冻（`rsa_ktau_nu=1e9, rsa_kmin_r=-1`）会在 a=0.76 发散，
 说明自由演化的大质量中微子层级本身不稳定。CAMB 用 `high_ktau` 把 lmax 降到 4
 而不是解冻，我们的截断方式与它不同，这一支暂不在生产路径上。
+
+## 已修复：紧耦合退出时没有装入 CAMP 的四极矩
+
+CAMB 在离开紧耦合时（equations.f90:355-367）会把上一次紧耦合求值得到的四极矩装进状态：
+
+```fortran
+y(EV%g_ix + 2) = EV%pig           ! 四极矩本身
+y(EV%polind + 2) = EV%pig/4
+y(EV%polind + 3) = y(EV%g_ix + 3)/4
+```
+
+我们的代码读的是 `Y[L.scalar("pig")]`，但 `dY[pig] = where(tcu|rsa_g, 0, pig_dot)`
+在紧耦合期间把该行钳在零，所以装入的是一个零四极矩。改为在切换点重算
+`pig = 32/45/kappa*k*(sigma+vb)`（新增 `rhs(..., capture=)` 出口）。
+
+实测：在当前工作负载上**数值无变化**（k=0.05/0.15/0.30/0.50 处比值逐位相同），
+因为切换点 `pig ≈ 32/450*(sigma+vb) ~ 1e-4`，远小于主导项。保留它是为了让实现
+与 CAMB 语义一致，并防止其它参数区（低 tc_epsilon）下出错。
