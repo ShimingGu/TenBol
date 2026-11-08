@@ -69,6 +69,23 @@
     "both_quartered": "+1.3918%",
     "conclusion": "tightening the step 4x changes nothing, so the ~1.4pp residual is in the equations or the initial conditions, not in the time integrator; do not spend more effort on step control"
   },
+  "camb_neutrino_switch_thresholds_from_source": {
+    "source": "equations.f90:311-315 and results.f90:2106-2117",
+    "neutrino": "tau_switch_no_nu_multpoles = max(15/k*switchBoost, min(State%taurend, matter_verydom_tau))",
+    "matter_verydom_tau": "tau at a_verydom, with a_verydom = AccuracyBoost*TimeSwitchBoost*5*(grhog+grhornomass)/(grhoc+grhob), i.e. about 5*Omega_r/Omega_m ~ 6.6e-4 (z ~ 1500)",
+    "State_taurend": "min(tau at a=1, reion_tau_start) ~ 1e4 Mpc",
+    "so_min_takes": "matter_verydom_tau, so the neutrino switch fires at tau ~ few hundred, set by radiation-matter equality, NOT by the end of recombination and NOT by tau0",
+    "photons": "tau_switch_no_phot_multpoles = max(15/k, State%taurend)*latePhotSwitchBoost, which uses State%taurend (~1e4), a third and much later value",
+    "our_code": "perturbations.py uses one _taurend for both sectors, defined as the tau where x_e < 1e-2 (z = 878, tau = 328.79); the neutrino threshold is therefore later than CAMB's (so the neutrino hierarchy runs free for too long, which is the direction that makes P too high) and the photon threshold is far too early"
+  },
+  "neutrino_threshold_fix_attempt": {
+    "what": "replaced the neutrino switch time (end-of-recombination proxy, tau = 328.79 at z = 878) with CAMB's matter_verydom_tau = 2198.46 Mpc (a_verydom = 5*Omega_r/Omega_m = 2.39e-2, z = 40.8), which is the value equations.f90:311-315 actually selects",
+    "measured_a_verydom": "grho_r0/grho_m0 = 4.784774e-03, so a_verydom = 2.392e-2 and tau(a_verydom) = 2198.46 Mpc against tau(a=1) = 14166.41",
+    "result": "NumericalFailure: non-finite perturbation state at a = 7.057e-3, k = 2.010e+00 /Mpc",
+    "why": "the neutrino ladder now evolves freely across the whole z = 878 -> 40.8 stretch; with lmax_nu = 12 and no high_ktau demotion the top row has no sink strong enough for k ~ 2 /Mpc, which is the same failure mode as the three earlier truncation attempts",
+    "conclusion": "the threshold is genuinely wrong, but fixing it alone is not possible: it must be paired with CAMB's high_ktau demotion to lmax 4 and a stable treatment of that truncated ladder",
+    "status": "reverted; the neutrino sector needs a redesign rather than a parameter change"
+  },
   "repo_state_at_compaction": {
     "head": "main@b6e5216",
     "worktree": "clean",
