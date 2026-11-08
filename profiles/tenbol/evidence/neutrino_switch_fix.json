@@ -1,0 +1,44 @@
+{
+  "what_changed": [
+    "neutrino switch time: the end-of-recombination proxy (x_e < 1e-2, z = 878, tau = 328.79 Mpc) replaced by CAMB's matter_verydom_tau (a_verydom = 5*Omega_r/Omega_m = 2.392e-2, z = 40.8, tau = 2198.46 Mpc)",
+    "high_ktau demotion: once k*tau > max(20, lmax_nu-4) the ladder top becomes l = 4 and every row above it is pinned to zero, matching CAMB's lmaxnu_high_ktau = 4",
+    "new dlna_nu = 1.0 step limit for the freely-streaming neutrino ladder; it needs numerical stability only, not the ~2% phase accuracy dlna_acoustic buys the photons"
+  ],
+  "sources_read_in_camb_2_0_5": [
+    "equations.f90:311-315  tau_switch_no_nu_multpoles = max(15/k*switchBoost, min(State%taurend, matter_verydom_tau))",
+    "results.f90:2107       a_verydom = AccuracyBoost*TimeSwitchBoost*5*(grhog+grhornomass)/(grhoc+grhob)",
+    "results.f90:2459       State%taurend = min(tau at a=1, reion_tau_start)",
+    "equations.f90:187,671  lmaxnu_high_ktau = 4 (nu_l_accuracy_boost = 1 for m_nu = 0.06 eV)",
+    "equations.f90:296      tau_switch_ktau = max(20, lmaxnr-4)/k",
+    "equations.f90:2366     cothxor = 1/tau",
+    "equations.f90:2746-2752  the interior neutrino rows carry NO sink; only the top row does"
+  ],
+  "why_all_three_are_needed": {
+    "switch_time_alone": "NumericalFailure at a = 7.057e-3, k = 2.010 /Mpc (the ladder then streams through z = 878..40.8 with no demotion)",
+    "plus_demotion": "same failure at the same point: lmax = 4 still had no step limit through tight coupling",
+    "plus_dlna_nu": "k = 0.8, 1.0, 1.4, 2.0, 3.0, 5.0 h/Mpc all reach a = 1"
+  },
+  "accuracy_before": {
+    "z": 0,
+    "k_hMpc": [0.0001, 0.0002, 0.0005, 0.0011, 0.0024, 0.0053, 0.0117, 0.0257, 0.0569, 0.1258, 0.2779, 0.6142, 1.3575, 3.0],
+    "ratio": [0.9768, 1.0005, 1.0001, 0.9983, 0.9959, 0.9911, 1.0009, 1.0196, 1.0202, 1.0280, 1.0300, 1.0357, 1.0359, 1.0352],
+    "spread": "0.9768 .. 1.0359",
+    "median": 1.0103,
+    "plateau_above_0.28": "+3.42%"
+  },
+  "accuracy_after": {
+    "z": 0,
+    "k_hMpc": [0.0001, 0.0002, 0.0005, 0.0011, 0.0024, 0.0053, 0.0117, 0.0257, 0.0569, 0.1258, 0.2779, 0.6142, 1.3575, 3.0],
+    "ratio": [0.9768, 1.0005, 1.0001, 0.9983, 0.9959, 0.9911, 1.0009, 1.0175, 1.0080, 1.0026, 1.0041, 1.0079, 1.0069, 1.0059],
+    "spread": "0.9768 .. 1.0175",
+    "median": 1.0017,
+    "plateau_above_0.28": "+0.60%"
+  },
+  "residual_and_open_problems": {
+    "k_1e_4": "-2.32%, unchanged by this fix; that point sits at the super-horizon edge of the grid",
+    "k_0.0257": "+1.75%, the first acoustic peak; was +1.96% before",
+    "k_10_hMpc": "still NumericalFailure at a = 8.382e-05 (k = 6.700 /Mpc); k <= 5 h/Mpc is clean. Not a neutrino-ladder problem: the first non-finite values appear in the photon/baryon tight-coupling terms.",
+    "still_short_of_target": "0.5% is not met: worst interior point is +1.75%"
+  },
+  "tests": "6 passed (python -m pytest tests/tenbol)"
+}

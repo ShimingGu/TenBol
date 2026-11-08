@@ -84,7 +84,7 @@
     "result": "NumericalFailure: non-finite perturbation state at a = 7.057e-3, k = 2.010e+00 /Mpc",
     "why": "the neutrino ladder now evolves freely across the whole z = 878 -> 40.8 stretch; with lmax_nu = 12 and no high_ktau demotion the top row has no sink strong enough for k ~ 2 /Mpc, which is the same failure mode as the three earlier truncation attempts",
     "conclusion": "the threshold is genuinely wrong, but fixing it alone is not possible: it must be paired with CAMB's high_ktau demotion to lmax 4 and a stable treatment of that truncated ladder",
-    "status": "reverted; the neutrino sector needs a redesign rather than a parameter change"
+    "status": "FIXED. The threshold alone diverged, but the three pieces together hold: threshold + high_ktau demotion to lmax=4 + an independent dlna_nu step limit for the freely-streaming ladder. k <= 5 h/Mpc now integrates and the high-k plateau drops from +3.42% to +0.60%. See neutrino_switch_fix.json for the numbers and the CAMB source lines."
   },
   "repo_state_at_compaction": {
     "head": "main@b6e5216",

@@ -78,6 +78,11 @@ class PerturbationSettings:
     max_steps: int = 400000
     h_start: float = 1.0e-4
     dlna_max: float = 0.005
+    # Step limit for the massive-neutrino ladder while it streams freely.
+    # Only numerical stability is needed here (RK4's stability boundary is
+    # around 2.8), unlike dlna_acoustic which buys the photons ~2% phase
+    # accuracy.  Sharing dlna_acoustic instead made every k point take minutes.
+    dlna_nu: float = 1.0
     dlna_min: float = 1.0e-6
     dlna_acoustic: float = 0.02
     stiff_factor: float = 0.2
@@ -138,6 +143,21 @@ class PerturbationBatch:
         self._taurend = np.array(
             [np.interp(np.log(aa), self._ln_a, self._tau_grid[si])
              for aa, si in zip(_a_rec, self.sample)])
+        # CAMB uses *two different* switch times and they are nowhere near each
+        # other (equations.f90:311-324):
+        #   neutrino: max(15/k, min(State%taurend, matter_verydom_tau))
+        #   photon:   max(15/k, State%taurend)*latePhotSwitchBoost
+        # where results.f90:2107 defines
+        #   a_verydom = AccuracyBoost*TimeSwitchBoost*5
+        #               *(grhog+grhornomass)/(grhoc+grhob)          (~5*Omega_r/Omega_m)
+        # and State%taurend = min(tau at a=1, reion_tau_start) ~ 1.4e4 Mpc.
+        # Using the end of recombination for the neutrino switch (x_e < 1e-2,
+        # z = 878, tau = 328.79) freezes the massive-neutrino hierarchy 6.7x too
+        # early: CAMB keeps it evolving until tau = 2198.46 (z = 40.8) here.
+        _a_vd = 5.0 * bg.grho_r0 / (bg.grho_c0 + bg.grho_b0)
+        self._taurend_nu = np.array(
+            [np.interp(np.log(aa), self._ln_a, self._tau_grid[si])
+             for aa, si in zip(np.ravel(_a_vd), self.sample)])
         self._cs2_tab = thermal.cs2_b(np.exp(self._ln_a))
         self._tau_tab = bg._tau_table
         self._rho_spl, self._p_spl = bg._nu_tables()
@@ -187,6 +207,7 @@ class PerturbationBatch:
             "h": h, "hprime": hprime, "gpres": gpres, "tau": tau,
             "tau_rem": np.maximum(self._tau_end[:, None] - tau, 0.0),
             "taurend": self._taurend,
+            "taurend_nu": self._taurend_nu,
             "kappa": kappa, "dopacity": dopacity, "cs2": cs2, "grho_c": grho_c, "grho_b": grho_b,
             "grho_g": grho_g, "grho_r": grho_r, "grho_nu_mass": grho_nu_mass,
             "grho_nu_species": (self.grho_nu_unit * self.degeneracy * rho)
@@ -342,7 +363,7 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     # high k: at k = 0.67 /Mpc with kappa still ~10 the substitution drove vb
     # from -0.1 to +29 inside one step and the trajectory ended at 2.5e148.
     _ktau_g = np.maximum(s.rsa_ktau, k * c["taurend"])
-    _ktau_nu = np.maximum(s.rsa_ktau_nu, k * c["taurend"])
+    _ktau_nu = np.maximum(s.rsa_ktau_nu, k * c["taurend_nu"])
     rsa_g = (ktau > _ktau_g) & (k > s.rsa_kmin)
     rsa_r = (ktau > _ktau_nu) & (k > s.rsa_kmin_r)
 
@@ -499,6 +520,23 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     l = L.lmax_nu
     dFnu[..., l, :] = (kb * vT * Fnu[..., l - 1, :]
                        - (l + 1) * Fnu[..., l, :] * inv_tau[None, None, :])
+    # CAMB demotes the massive-neutrino ladder to lmaxnu_high_ktau = 4 as soon
+    # as k*tau > max(20, lmaxnr-4) (equations.f90:296 with 671-672) and keeps
+    # *evolving* those four moments; it does not stop at l = 4 and it never
+    # carries the full ladder at high k.  A fixed-width (S, nq, lmax_nu+1)
+    # tensor cannot change its height per trajectory, so a demoted trajectory
+    # gets l = 4 as its top row and every row above it is pinned to zero.
+    # This piece is mandatory: with the switch time corrected but lmax left at
+    # 12 the run dies at k = 2.01 /Mpc, a = 7.06e-3.
+    hi_ktau = (ktau > max(20.0, float(L.lmax_nu - 4))) & (k > s.rsa_kmin_r)
+    if np.any(hi_ktau):
+        m = hi_ktau[None, None, None, :]
+        dFnu[..., 4, :] = np.where(
+            m,
+            kb * vT * Fnu[..., 3, :] - 5.0 * Fnu[..., 4, :] * inv_tau[None, None, :],
+            dFnu[..., 4, :])
+        for ll in range(5, L.lmax_nu + 1):
+            dFnu[..., ll, :] = np.where(m, 0.0, dFnu[..., ll, :])
     # Freeze the massive-neutrino hierarchy while k*(tau0 - tau) is large
     # (early times), mirroring CAMB's high_ktau switch.  Without this the
     # block has no sink and its cascade runs away.
@@ -509,7 +547,7 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     # Using k*tau_rem froze the hierarchy from the very first step (tau_rem is
     # ~14000 early on, so every k in the workload exceeded the threshold),
     # which is what left clxnu = qnu = 0.
-    _ktau_nu_mass = np.maximum(s.rsa_ktau_nu, k * c["taurend"])
+    _ktau_nu_mass = np.maximum(s.rsa_ktau_nu, k * c["taurend_nu"])
     nu_free = (ktau > _ktau_nu_mass) & (k > s.rsa_kmin_r)
     if np.any(nu_free):
         dFnu = np.where(nu_free[None, None, None, :], 0.0, dFnu)
@@ -544,7 +582,7 @@ def _event_times(batch: "PerturbationBatch", a0, a1):
         ("rsa_g", k * tau,
          np.where(k > s.rsa_kmin, np.maximum(s.rsa_ktau, k * batch._taurend[:, None]), np.inf)),
         ("rsa_r", k * tau,
-         np.where(k > s.rsa_kmin_r, np.maximum(s.rsa_ktau_r, k * batch._taurend[:, None]),
+         np.where(k > s.rsa_kmin_r, np.maximum(s.rsa_ktau_r, k * batch._taurend_nu[:, None]),
                   np.inf)),
     ):
         diff = ref - extra
@@ -654,7 +692,7 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
         dtau = 1.0 / c["h"]
         ktau = batch.k * c["tau"]
         ktau_g = np.maximum(s.rsa_ktau, batch.k * c["taurend"])
-        ktau_r = np.maximum(s.rsa_ktau_r, batch.k * c["taurend"])
+        ktau_r = np.maximum(s.rsa_ktau_r, batch.k * c["taurend_nu"])
         rsa_g = (ktau > ktau_g) & (batch.k > s.rsa_kmin)
         rsa_r = (ktau > ktau_r) & (batch.k > s.rsa_kmin_r)
         lim = np.full(T, s.dlna_max)
@@ -666,9 +704,25 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
         # was needed.  For k = 1 h/Mpc the free window tau ~ 130..330 then ran
         # unconstrained and the polarization reached 1.9e6 (measured) while the
         # photons stayed at 6e-3.
-        free = ~(tcu | rsa_g | rsa_r)
-        lim = np.where(free,
+        # Massive neutrinos stream freely even while the photons are still
+        # tight-coupled: the radiation RSAs do not touch their hierarchy.  Now
+        # that the neutrino switch runs to matter_verydom_tau the ladder is
+        # live from the very first step, and keying the angular CFL on `free`
+        # (which excludes the tight-coupling window) left it unconstrained
+        # there: k >= 2 h/Mpc diverged, and the failure moved earlier as k
+        # grew (a = 8.5e-5 at k = 10 h/Mpc).
+        angular = ~(tcu | rsa_g)
+        lim = np.where(angular,
                        np.minimum(lim, s.dlna_acoustic / np.maximum(batch.k * dtau, 1e-30)),
+                       lim)
+        # Neutrinos keep streaming freely through tight coupling, so their
+        # ladder needs a step limit the photons do not: without one, k >= 2
+        # h/Mpc blew up and the failure moved earlier as k grew (a = 8.5e-5 at
+        # k = 10 h/Mpc).  They need numerical stability only, not the 2% phase
+        # accuracy dlna_acoustic buys for the photons, hence the far wider
+        # dlna_nu: using dlna_acoustic here made every k point several minutes.
+        lim = np.where(~rsa_r,
+                       np.minimum(lim, s.dlna_nu / np.maximum(batch.k * dtau, 1e-30)),
                        lim)
         lim = np.where((batch.k * c["tau"]) < 1.0,
                        np.minimum(lim, s.dlna_superhorizon), lim)
