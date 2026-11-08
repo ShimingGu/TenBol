@@ -129,7 +129,9 @@ class PerturbationBatch:
         return table[self.sample, i] * (1.0 - t) + table[self.sample, i + 1] * t
 
     def coefficients(self, a):
-        a = float(a) if np.ndim(a) == 0 else np.asarray(a, dtype=np.float64)
+        # Always an array: the scalar branch left `a` as a float, which then
+        # failed on a[:, None] below.
+        a = np.atleast_1d(np.asarray(a, dtype=np.float64))
         inv_a = 1.0 / a
         # self.mu0 is already per-trajectory (T,), so it needs its own axis;
         # a[:, None] * self.mu0 would broadcast to (T, T) for T > 1.
