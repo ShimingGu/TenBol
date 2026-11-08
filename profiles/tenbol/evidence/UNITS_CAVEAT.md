@@ -658,3 +658,26 @@ tc_epsilon、步长、RSA 阈值、二阶紧耦合（只解释 ~12%）。
 的既有约束冲突，属架构级改动，应单独立项。
 
 当前保留整体冻结（稳定），它带来高 k 约 +3.5% 的偏差。
+
+## 报告口径提醒（给最终报告用）
+
+任务清单把 m2b（CUDA backend + hardware validation）、m2c（MPS backend）、
+m4（sampler adapter）都标成 completed。但仓库里的事实是：
+
+```
+git ls-files | grep -ci cuda    -> 0
+git ls-files | grep -ci mps     -> 0
+git ls-files | grep -ci metal   -> 0
+git ls-files | grep -ci sampler -> 0
+git ls-files | grep -ci cobaya  -> 0
+```
+
+`tenbol/backends/` 只有 `device.py`、`torch_solver.py`、`triton_solver.py`，
+其中 torch_solver 是 device 参数化的逐算子移植（实测比 numpy 慢 9 倍，
+CUDA 上更慢），triton_solver 只有一个 62/229 行的 prototype kernel。
+**没有"生成的 CUDA kernel"、没有 MPS 实现、没有采样器适配层。**
+
+m2a 声称跑了 16/32/128 三档：evidence 只有 `accuracy_suite_n16.json` 和
+`accuracy_suite_n32.json`，n=128 从未产出（多次 10–15 分钟被杀）。
+
+按项目要求的五档状态口径，这些项属于"待外部条件"或"未实现"，不是"已实现"。
