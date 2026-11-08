@@ -121,6 +121,23 @@ class PerturbationBatch:
         # conformal time (tau0 - tau), which is what makes 1/tau huge today.
         self._tau_end = np.array([np.interp(0.0, self._ln_a, row)
                                   for row in self._tau_grid])
+        # Conformal time at the end of recombination.  CAMB switches the
+        # radiation hierarchies to the algebraic streaming approximation at
+        #   tau_switch = max(15/k, taurend)
+        # (equations.f90:313-323), so the threshold is NOT a constant in k.
+        # Here taurend is proxied by the first redshift below the hydrogen
+        # recombination peak where x_e has fallen under 1e-2; CAMB defines it
+        # as where the cumulative visibility reaches 0.995, which sits at a
+        # similar conformal time (~329 Mpc for this cosmology).
+        _z = np.exp(-self._ln_a) - 1.0
+        _below = ((thermal.xe_table[self.sample] < 1.0e-2)
+                  & (_z[None, :] < 1500.0) & (_z[None, :] > 400.0))
+        _has = _below.any(axis=1)
+        _first = np.argmax(_below, axis=1)
+        _a_rec = np.where(_has, np.exp(self._ln_a[_first]), 1.0e-3)
+        self._taurend = np.array(
+            [np.interp(np.log(aa), self._ln_a, self._tau_grid[si])
+             for aa, si in zip(_a_rec, self.sample)])
         self._cs2_tab = thermal.cs2_b(np.exp(self._ln_a))
         self._tau_tab = bg._tau_table
         self._rho_spl, self._p_spl = bg._nu_tables()
@@ -169,6 +186,7 @@ class PerturbationBatch:
         return {
             "h": h, "hprime": hprime, "gpres": gpres, "tau": tau,
             "tau_rem": np.maximum(self._tau_end[:, None] - tau, 0.0),
+            "taurend": self._taurend,
             "kappa": kappa, "dopacity": dopacity, "cs2": cs2, "grho_c": grho_c, "grho_b": grho_b,
             "grho_g": grho_g, "grho_r": grho_r, "grho_nu_mass": grho_nu_mass,
             "grho_nu_species": (self.grho_nu_unit * self.degeneracy * rho)
@@ -284,8 +302,15 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None):
 
     tcu = kappa > (k / s.tc_epsilon)
     ktau = k * tau
-    rsa_g = (ktau > s.rsa_ktau) & (k > s.rsa_kmin)
-    rsa_r = (ktau > s.rsa_ktau_nu) & (k > s.rsa_kmin_r)
+    # CAMB (equations.f90:313-323) switches the radiation hierarchies to the
+    # algebraic streaming form once tau > max(15/k, taurend), i.e. when
+    # k*tau > max(15, k*taurend).  A constant threshold fires far too early at
+    # high k: at k = 0.67 /Mpc with kappa still ~10 the substitution drove vb
+    # from -0.1 to +29 inside one step and the trajectory ended at 2.5e148.
+    _ktau_g = np.maximum(s.rsa_ktau, k * c["taurend"])
+    _ktau_nu = np.maximum(s.rsa_ktau_nu, k * c["taurend"])
+    rsa_g = (ktau > _ktau_g) & (k > s.rsa_kmin)
+    rsa_r = (ktau > _ktau_nu) & (k > s.rsa_kmin_r)
 
     # ---- radiation streaming approximation ----------------------------
     zm = (0.5 * dgrho_matter / k + etak) / h
@@ -457,8 +482,11 @@ def _event_times(batch: "PerturbationBatch", a0, a1):
     out = {}
     for name, ref, extra in (
         ("tc", kap, k / s.tc_epsilon),
-        ("rsa_g", k * tau, np.where(k > s.rsa_kmin, s.rsa_ktau, np.inf)),
-        ("rsa_r", k * tau, np.where(k > s.rsa_kmin_r, s.rsa_ktau_r, np.inf)),
+        ("rsa_g", k * tau,
+         np.where(k > s.rsa_kmin, np.maximum(s.rsa_ktau, k * batch._taurend[:, None]), np.inf)),
+        ("rsa_r", k * tau,
+         np.where(k > s.rsa_kmin_r, np.maximum(s.rsa_ktau_r, k * batch._taurend[:, None]),
+                  np.inf)),
     ):
         diff = ref - extra
         change = np.sign(diff[:, :-1]) != np.sign(diff[:, 1:])
