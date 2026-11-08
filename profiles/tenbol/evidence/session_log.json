@@ -61,6 +61,14 @@
     "non_neutrino_share": "~1.4pp residual with an effectively massless species",
     "implication": "two independent errors, not one: a neutrino-sector ~2pp and a CDM+b solver ~1.4pp"
   },
+  "residual_is_not_an_integrator_error": {
+    "method": "m_nu = 1e-4 eV, four step-control settings, plateau = mean ratio for k >= 0.28 h/Mpc",
+    "baseline": "+1.3916%",
+    "dlna_acoustic_0.005": "+1.3916% (bit-identical: the angular CFL is not the active limit)",
+    "dlna_max_0.00125": "+1.3917% (ratio moved by 0.0002 at worst)",
+    "both_quartered": "+1.3918%",
+    "conclusion": "tightening the step 4x changes nothing, so the ~1.4pp residual is in the equations or the initial conditions, not in the time integrator; do not spend more effort on step control"
+  },
   "repo_state_at_compaction": {
     "head": "main@b6e5216",
     "worktree": "clean",
