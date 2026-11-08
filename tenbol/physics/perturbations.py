@@ -117,6 +117,10 @@ class PerturbationBatch:
         # logarithmic derivative (CAMB: dopacity/opacity).
         self._dkap_tab = np.gradient(self._kap_tab, self._ln_a, axis=1)
         self._tau_grid = bg.tau(np.exp(self._ln_a))                    # (B, N)
+        # Conformal time at a = 1.  CAMB's radiation damping uses the *remaining*
+        # conformal time (tau0 - tau), which is what makes 1/tau huge today.
+        self._tau_end = np.array([np.interp(0.0, self._ln_a, row)
+                                  for row in self._tau_grid])
         self._cs2_tab = thermal.cs2_b(np.exp(self._ln_a))
         self._tau_tab = bg._tau_table
         self._rho_spl, self._p_spl = bg._nu_tables()
@@ -164,6 +168,7 @@ class PerturbationBatch:
         vnu = 1.0 / np.sqrt(1.0 + (am[:, :, None] / NU_Q[None, None, :]) ** 2)
         return {
             "h": h, "hprime": hprime, "gpres": gpres, "tau": tau,
+            "tau_rem": np.maximum(self._tau_end[:, None] - tau, 0.0),
             "kappa": kappa, "dopacity": dopacity, "cs2": cs2, "grho_c": grho_c, "grho_b": grho_b,
             "grho_g": grho_g, "grho_r": grho_r, "grho_nu_mass": grho_nu_mass,
             "grho_nu_species": (self.grho_nu_unit * self.degeneracy * rho)
@@ -300,7 +305,12 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None):
     dgrho = dgrho_matter + grho_g * dg_e + grho_r * dr_e
     dgq = dgq_matter + grho_g * qg_e + grho_r * qr_e
 
-    inv_tau = np.minimum(1.0 / np.maximum(tau, 1e-300), k)
+    # CAMB's cothxor = 1/tau where tau is measured back from today, so the
+    # truncation damps hard at late times.  Using the accumulated tau made
+    # 1/tau ~ 7e-5 against a free-streaming rate k ~ 6e-2, three orders too
+    # weak: the massive-neutrino cascade then grew to 1e36 (measured) and
+    # dragged the scalars with it.
+    inv_tau = 1.0 / np.maximum(c["tau_rem"], 1.0e-8)
     z = (0.5 * dgrho / k + etak) / h
     sigma = z + 1.5 * dgq / k2
 
@@ -412,6 +422,13 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None):
     l = L.lmax_nu
     dFnu[..., l, :] = (kb * vT * Fnu[..., l - 1, :]
                        - (l + 1) * Fnu[..., l, :] * inv_tau[None, None, :])
+    # Freeze the massive-neutrino hierarchy while k*(tau0 - tau) is large
+    # (early times), mirroring CAMB's high_ktau switch.  Without this the
+    # block has no sink and its cascade runs away.
+    ktau_rem = k * c["tau_rem"]
+    nu_free = (ktau_rem > s.rsa_ktau_nu) & (k > s.rsa_kmin_r)
+    if np.any(nu_free):
+        dFnu = np.where(nu_free[None, None, None, :], 0.0, dFnu)
     dY[L.offsets["Fnu"]] = dFnu.reshape(L.offsets["Fnu"].stop - L.offsets["Fnu"].start, T)
 
     # d/dtau -> d/dln a
