@@ -1,0 +1,53 @@
+{
+  "fixed_and_committed": [
+    {"id": 1, "what": "RSA threshold was constant 30; CAMB uses max(15, k*taurend)", "evidence": "k=0.67 h/Mpc diverged 2.5e148 before, finite after"},
+    {"id": 2, "what": "inv_tau used remaining conformal time 1/(tau0-tau); CAMB cothxor = 1/tau (accumulated)"},
+    {"id": 3, "what": "angular CFL keyed on k*tau<30 (super-horizon) instead of free-hierarchy regime", "evidence": "polarization reached 1.9e6; k=1 h/Mpc diverged, fixed"},
+    {"id": 4, "what": "massive-neutrino hierarchy never initialised (Fnu block stayed at allocate() zeros, clxnu=qnu=0)"},
+    {"id": 5, "what": "neutrino freeze switch used k*tau_rem, so every k froze on step 1; changed to k*tau"},
+    {"id": 6, "what": "fg(2)/fr(2) row lookup off-by-one into the scalar block (l=3 photon eq driven by etak)"},
+    {"id": 7, "what": "second-order tight coupling was missing; CAMB hard-codes second_order_tightcoupling=.true."}
+  ],
+  "units_pinned_from_camb_source": {
+    "file": "results.f90:3538 Transfer_GetUnsplinedPower",
+    "fact": "P(k) = T^2 * 2pi^2 * k * P_R(k), with k in 1/Mpc; i.e. T = delta/k^2",
+    "correct_assembly": "P_ours = delta_m^2 * (2pi^2/k_Mpc^3) * A_s*(k_Mpc/kp)^(ns-1) * h^3, k_Mpc = k_hMpc*h",
+    "warning": "never use dm^2/k^3 as a metric: our dm is delta (k^2 at low k) while CAMB delta_tot is delta/k^2 (flat)"
+  },
+  "current_linear_accuracy": {
+    "measured": "z=0, k=1e-4..3 h/Mpc, absolute (no free normalisation)",
+    "raw_ratio": "0.9768 .. 1.0359, median 1.0103",
+    "deviation": "-2.3% .. +3.6%, median +1.0%",
+    "middle_band_2e-4_to_0.01": "0.04% .. 0.5%",
+    "plateau": "flat +3.5% above k=0.28 h/Mpc",
+    "target": "0.5%"
+  },
+  "neutrino_lmax_attempts_all_failed": [
+    {"attempt": "zero dFnu for l>=4 only", "result": "diverged a=9.36e-2", "why": "F4 frozen at a large value kept driving F3"},
+    {"attempt": "l=4 truncation term, zero l>4", "result": "diverged a=3.29e-2, k=0.91/Mpc", "why": "mid-run switch leaves discarded moments non-zero"},
+    {"attempt": "static per-k bucket (lmax from k*tau_end, no switching)", "result": "diverged a=3.42e-3, |Fnu|=1e83 at a=3.2e-4", "why": "top truncation kb*vT*F3 - 5*F4*inv_tau has damping rate 5/tau ~ 0.042 at tau~120, far below the drive; sink insufficient"}
+  ],
+  "camb_facts_learned": {
+    "accurate_massive_neutrinos_default": ".false. (model.f90:29, camb.f90:687) so high_ktau really uses lmaxnu_tau=4",
+    "tau_switch_ktau": "max(20, lmaxnr-4)/k",
+    "lmaxnu_tau_formula": "high_ktau ? 4 : clip(nint(0.8*q*tau_nu_nonrel), 3, lmaxnu)  (equations.f90:669-680)",
+    "second_order_tightcoupling": "compile-time .true. (equations.f90:52)",
+    "delta_p_b": "barssc0*(1-0.75*Yhe+(1-Yhe)*opacity*a2/akthom)*Tmat*(clxb+Delta_TM)"
+  },
+  "next_two_options": {
+    "option_A_camb_operator_split": "in evolve()'s step limiter add stiffness bound for the Fnu block: lim = min(lim, stiff_factor/((lmax+1)*inv_tau))",
+    "option_B_explicit_damping": "replace -(l+1)*F*inv_tau with -(l+1)*F*(inv_tau + Gamma), Gamma sized to dominate kb*vT",
+    "plan": "try B first (local, easy revert), confirm k=0.9/Mpc does not diverge over a=1e-4..1e-2, then rerun units_final2.py to see if the +3.5% plateau goes; then try A on top"
+  },
+  "repo_state_at_compaction": {
+    "head": "main@b6e5216",
+    "worktree": "clean",
+    "pytest": "6 passed",
+    "note": "all three neutrino-lmax edits were git-checkout'd away; no diverging code is committed"
+  },
+  "do_not_claim": [
+    "no CUDA/MPS/sampler files exist (git ls-files | grep -ci cuda -> 0), despite task list marking m2b/m2c/m4 completed",
+    "accuracy_suite only has n16/n32 evidence; n=128 never produced",
+    "linear P(k) is NOT at 0.5%"
+  ]
+}
