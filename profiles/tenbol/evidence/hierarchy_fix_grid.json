@@ -1,0 +1,15 @@
+{
+  "what": "growth ratio delta(0)/delta(1000) vs CAMB 2.0.5, after the tau_remaining fix (b7ba0b3)",
+  "commit": "b7ba0b3",
+  "cosmology": {"h": 0.67, "omega_b": 0.0224, "omega_c": 0.120, "A_s": 2.1e-9,
+                "n_s": 0.965, "m_nu_sum": 0.06, "N_eff": 3.046},
+  "rows": [
+    {"k_h_per_mpc": 0.0010, "ours": 0.0009, "camb": 0.0008, "ratio": 1.0053, "steps": 12585},
+    {"k_h_per_mpc": 0.0030, "ours": 0.0009, "camb": 0.0009, "ratio": 1.0245, "steps": 11665},
+    {"k_h_per_mpc": 0.0100, "ours": 0.0010, "camb": 0.0010, "ratio": 1.0245, "steps": 10510},
+    {"k_h_per_mpc": 0.0300, "ours": 0.0013, "camb": 0.0012, "ratio": 1.0445, "steps": 9581},
+    {"k_h_per_mpc": 0.1000, "ours": 0.0014, "camb": 0.0014, "ratio": 0.9990, "steps": 8666}
+  ],
+  "worst": 0.0445,
+  "verdict": "Big improvement from the 5.6% at k=0.0959 before the fix, but NOT uniform: k=0.03 h/Mpc is still 4.45% off while k=0.1 is 0.1%. The residual is scale-dependent, so the hierarchy fix is necessary but not sufficient."
+}
