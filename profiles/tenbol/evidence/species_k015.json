@@ -1,0 +1,17 @@
+{
+  "what": "per-species growth delta(0)/delta(1000) at k = 0.15 h/Mpc vs CAMB 2.0.5",
+  "commit": "b7ba0b3",
+  "rows": [
+    {"species": "delta_tot",      "ours": 704.385, "camb": 645.452, "ratio": 1.0913},
+    {"species": "delta_cdm",      "ours": 578.163, "camb": 531.444, "ratio": 1.0879},
+    {"species": "delta_baryon",   "ours": 13074.840, "camb": 8761.947, "ratio": 1.4922},
+    {"species": "delta_photon",   "ours": 1.000, "camb": -0.027, "ratio": null},
+    {"species": "delta_neutrino", "ours": 1.000, "camb": -0.574, "ratio": null}
+  ],
+  "absolute_at_z1000": {
+    "delta_cdm":      {"ours": 37.122, "camb": 4815.1},
+    "delta_baryon":   {"ours": 1.6341, "camb": 290.17},
+    "ratio_b_over_c": {"ours": 0.0440, "camb": 0.0603}
+  },
+  "reading": "The baryon sector is the outlier: its growth ratio is 1.49x CAMB while CDM is only 1.09x. At z=1000 our baryon/CDM ratio is 0.044 against CAMB's 0.060, i.e. 27% low -- the baryon perturbation is under-grown through the acoustic/decoupling epoch and then has to catch up. Photon and neutrino entries read 1.000 exactly because when RSA is on those state rows are frozen (dY=0); the recorded value is the stale state, not the RSA value used in the sources."
+}
