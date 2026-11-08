@@ -1,0 +1,13 @@
+{
+  "what": "sensitivity of the linear growth ratio to the RSA switches, k in h/Mpc",
+  "commit": "b7ba0b3",
+  "rows": [
+    {"config": "rsa_ktau=30, rsa_ktau_nu=30 (default)",
+     "k=0.010": 0.9761, "k=0.030": 0.9574, "k=0.150": 1.0913},
+    {"config": "rsa off (1e6/1e6)",
+     "k=0.010": 0.9333, "k=0.030": 0.9120, "k=0.150": 1.0217},
+    {"config": "photon RSA at 15, neutrino off",
+     "k=0.010": 0.9332, "k=0.030": 0.9111, "k=0.150": 1.0277}
+  ],
+  "reading": "RSA is doing real work at low k (turning it off costs 4-5% there) but the high-k overshoot (+9% at k=0.15) barely moves (1.09 -> 1.02). So the high-k error is NOT the RSA switch; it is upstream of it."
+}
