@@ -395,6 +395,22 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
         + (-adotdota * vb - k / 2.0 * h * dg_e + k * (cs2 * db_dot - dg_dot / 4.0))
         / (kappa * (1.0 + pb43))
     )
+    # ---- second-order tight coupling --------------------------------
+    # CAMB hard-codes ``second_order_tightcoupling = .true.``
+    # (equations.f90:52) and uses it to correct the quadrupole
+    # (equations.f90:2496-2512).  First-order tight coupling does not produce
+    # Silk damping; this correction is what damps the acoustic oscillations on
+    # scales below the diffusion length, so leaving it out biases the high-k
+    # transfer upwards.
+    dop = np.where(tcu, c.get("dopacity", 0.0), 0.0)
+    kap_safe = np.maximum(kappa, 1e-300)
+    dgs = grho_g * pig_tc + grho_r * Y[L.scalar("pir")]
+    sigmadot = -2.0 * h * sigma - dgs / k + etak
+    qgdot_tc = k * (dg_e / 4.0 - pig_tc / 2.0) + kap_safe * slip
+    _r = dop * (11.0 / 6.0) / kap_safe ** 2
+    pig_tc = (32.0 / 45.0 / kap_safe * k * (sigma + 0.75 * qg_e) * (1.0 + _r)
+              + (32.0 / 45.0 / kap_safe ** 2) * k * (sigmadot + 0.75 * qgdot_tc)
+              * (-11.0 / 6.0))
     vb_tc = (
         (-h * vb + cs2 * k * db + k / 4.0 * pb43 * (dg_e - 2.0 * pig_tc)) / (1.0 + pb43)
         + pb43 / (1.0 + pb43) * slip

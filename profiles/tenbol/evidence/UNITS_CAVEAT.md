@@ -420,3 +420,35 @@ P_ours(k) ∝ δ_m(k)^2 · k^(ns-1) / k^3        (ns = 0.965)
    已把 l=2 映射到 `pig`/`pir`。
 
 外加一个语义修正：紧耦合退出时按 CAMB 装入 `EV%pig`（当前负载下数值无变化）。
+
+## 已补上：二阶紧耦合（CAMB 硬编码开启）
+
+CAMB `equations.f90:52`：
+
+```fortran
+logical, parameter :: second_order_tightcoupling = .true.
+```
+
+这是编译期常量、无法关闭。一阶紧耦合不产生 Silk 阻尼——阻尼来自
+`pig` 的二阶修正（equations.f90:2496-2512）：
+
+```
+dgs      = grhog*pig + grhor*pir
+sigmadot = -2*adotoa*sigma - dgs/k + etak
+qgdot    = k*(clxg/4 - pig/2) + opacity*slip
+pig      = 32/45/opacity*k*(sigma + 3qg/4)*(1 + dopacity*11/6/opacity²)
+           + 32/45/opacity²*k*(sigmadot + 3qgdot/4)*(-11/6)
+```
+
+已按此实现。效果（P(k)，z=0，在 k=0.01 归一化）：
+
+| k [h/Mpc] | 补前 | 补后 |
+|---|---|---|
+| 0.02 | +2.40% | +1.64% |
+| 0.05 | +3.68% | +2.92% |
+| 0.10 | +5.37% | +4.79% |
+| 0.20 | +4.37% | +2.45% |
+| 0.50 | +4.36% | +3.97% |
+| 1.00 | +4.45% | +3.89% |
+
+高 k 残差从 ~4.4% 降到 ~3.9%，方向正确但量级只解释了约 12%。
