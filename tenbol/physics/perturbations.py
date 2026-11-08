@@ -224,8 +224,19 @@ def initial_state(batch: "PerturbationBatch", a0: float):
     dr = dg.copy()
     db = 0.75 * dg
     qg = dg * x / 9.0
-    qr = -(4.0 * Rv + 23.0) / Rp15 * x ** 3 / 27.0
-    pir = 4.0 / 3.0 * x ** 2 / Rp15 * (
+    # CAMB (equations.f90:1985-1990) ends InitialScalarPerturbations with
+    # ``initvec = -initvec`` for adiabatic ("so we start with chi = -1"), which
+    # flips every component together and therefore fixes the RELATIVE signs.
+    # Taking i_clxg (after the flip) as the positive reference, CAMB has
+    #     i_qr  = +(4*Rv+23)/Rp15 * x^3/27
+    #     i_pir = -4/3 * x^2/Rp15 * (1 + omtau/4*(4Rv-5)/(2Rv+15))
+    #     i_aj3r= -4/21/Rp15 * x^3
+    # Our versions had the opposite sign on all three, so qr was
+    # anti-adiabatic: the neutrino heat flux subtracted from the photon one in
+    # dgq instead of adding, seeding an isocurvature component that grows in
+    # relative importance towards high k.
+    qr = (4.0 * Rv + 23.0) / Rp15 * x ** 3 / 27.0
+    pir = -4.0 / 3.0 * x ** 2 / Rp15 * (
         1.0 + omtau / 4.0 * (4.0 * Rv - 5.0) / (2.0 * Rv + 15.0))
     eta = 2.0 * (1.0 - x ** 2 / 12.0 * (-10.0 / Rp15 + 1.0))
 
@@ -238,7 +249,7 @@ def initial_state(batch: "PerturbationBatch", a0: float):
     Y[L.scalar("qr")] = qr
     Y[L.scalar("pir")] = pir
     Y[L.scalar("etak")] = -eta * k / 2.0
-    Y[L.fr(3)] = 4.0 / 21.0 / Rp15 * x ** 3
+    Y[L.fr(3)] = -4.0 / 21.0 / Rp15 * x ** 3
     # Massive neutrinos are relativistic at a_start, so their hierarchy starts
     # on the same adiabatic series as the massless one.  This block used to be
     # left at the zero from L.allocate(), which made clxnu and qnu identically

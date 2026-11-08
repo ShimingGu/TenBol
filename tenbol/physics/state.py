@@ -70,7 +70,18 @@ class StateLayout:
 
     # -- hierarchy rows -------------------------------------------------
     def fg(self, l: int) -> int:
-        """Row of the photon moment ``F_gamma,l`` (3 <= l <= lmax_g)."""
+        """Row of the photon moment ``F_gamma,l`` (2 <= l <= lmax_g).
+
+        ``l = 2`` is the quadrupole, which lives in the scalar block as
+        ``pig``; the Fg block itself starts at ``l = 3``.  Writing
+        ``start + (l - 3)`` unconditionally gave ``start - 1`` for l = 2,
+        i.e. the last scalar row (``etak``), so the l = 3 photon equation
+        was driven by the metric variable instead of the quadrupole.  CAMB's
+        layout has ``ay(g_ix + 2)`` as the quadrupole, so ``denlk(3)*ay(g_ix+2)``
+        is the quadrupole term.
+        """
+        if l == 2:
+            return self.scalar("pig")
         return self.offsets["Fg"].start + (l - 3)
 
     def g(self, l: int) -> int:
@@ -78,7 +89,13 @@ class StateLayout:
         return self.offsets["G"].start + (l - 2)
 
     def fr(self, l: int) -> int:
-        """Row of the massless-neutrino moment ``F_r,l`` (3 <= l <= lmax_r)."""
+        """Row of the massless-neutrino moment ``F_r,l`` (2 <= l <= lmax_r).
+
+        Same off-by-one as ``fg``: l = 2 is ``pir`` in the scalar block, and
+        ``start + (l - 3)`` pointed one row below the Fr block (the last G row).
+        """
+        if l == 2:
+            return self.scalar("pir")
         return self.offsets["Fr"].start + (l - 3)
 
     def fnu(self, s: int, q: int, l: int) -> int:
