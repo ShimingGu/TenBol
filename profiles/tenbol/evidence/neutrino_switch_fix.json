@@ -34,6 +34,21 @@
     "median": 1.0017,
     "plateau_above_0.28": "+0.60%"
   },
+  "residual_decomposition_after_fix": {
+    "method": "the same pipeline rerun with m_nu = 1e-4 eV instead of 0.06 eV",
+    "plateau_above_0.28_with_neutrinos": "+0.62%",
+    "plateau_above_0.28_without_neutrinos": "+0.97%",
+    "neutrino_share_before_the_fix": "+2.0pp (with neutrinos worse)",
+    "neutrino_share_after_the_fix": "-0.35pp (with neutrinos BETTER, so the sign flipped and the sector is no longer the dominant error)",
+    "per_k_delta_mnu1e4_minus_mnu0.06": {
+      "0.0001": -0.0013, "0.0002": -0.0014, "0.0005": -0.0015, "0.0011": -0.0020,
+      "0.0024": -0.0040, "0.0053": -0.0022, "0.0117": -0.0048, "0.0257": -0.0059,
+      "0.0569": -0.0032, "0.1258": 0.0037, "0.2779": 0.0039, "0.6142": 0.0032,
+      "1.3575": 0.0033, "3.0": 0.0036
+    },
+    "what_is_left": "a non-neutrino residual: +0.97% at high k with an effectively massless species, and -2.4% at k = 1e-4 h/Mpc, which the neutrino change does not move at all (delta = -0.13pp there)",
+    "first_acoustic_peak": "k = 0.0257 reads 1.0175 with neutrinos and 1.0115 without, so -0.59pp of it is the neutrino mass"
+  },
   "residual_and_open_problems": {
     "k_1e_4": "-2.32%, unchanged by this fix; that point sits at the super-horizon edge of the grid",
     "k_0.0257": "+1.75%, the first acoustic peak; was +1.96% before",
