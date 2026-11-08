@@ -39,6 +39,28 @@
     "option_B_explicit_damping": "replace -(l+1)*F*inv_tau with -(l+1)*F*(inv_tau + Gamma), Gamma sized to dominate kb*vT",
     "plan": "try B first (local, easy revert), confirm k=0.9/Mpc does not diverge over a=1e-4..1e-2, then rerun units_final2.py to see if the +3.5% plateau goes; then try A on top"
   },
+  "options_tried_after_documenting": {
+    "B_damping_in_rhs": {
+      "what": "dFnu[lmax] = kb*vT*F[l-1] - (l+1)*F[l]*(inv_tau+gamma), gamma = max(k*vnu-(l+1)*inv_tau, 0)",
+      "result": "diverged: P=1.1e11 at k=1.36 h/Mpc, 1.1e246 at k=3",
+      "why": "the added rate (lmax+1)*gamma is far outside the explicit RK4 stability region; resolving it with a step limit needs ~1e6 steps",
+      "status": "reverted"
+    },
+    "B_operator_split": {
+      "what": "same gamma applied as an exact exponential on the top Fnu row after each RK4 step (unconditionally stable)",
+      "result": "stable, plateau unchanged: 0.9768..1.0349 (k=3 went 1.0343->1.0306, k=1.36 1.0350->1.0335)",
+      "conclusion": "neutrino truncation is not the cause of the plateau; reverted to keep the solver simple",
+      "status": "reverted"
+    }
+  },
+  "plateau_decomposition": {
+    "method": "identical pipeline rerun with m_nu = 1e-4 eV instead of 0.06 eV",
+    "plateau_mnu_0.06": "+3.42% (mean of k >= 0.28 h/Mpc)",
+    "plateau_mnu_1e-4": "+1.39%",
+    "neutrino_share": "~2.0pp, only for k > 0.06 h/Mpc",
+    "non_neutrino_share": "~1.4pp residual with an effectively massless species",
+    "implication": "two independent errors, not one: a neutrino-sector ~2pp and a CDM+b solver ~1.4pp"
+  },
   "repo_state_at_compaction": {
     "head": "main@b6e5216",
     "worktree": "clean",
