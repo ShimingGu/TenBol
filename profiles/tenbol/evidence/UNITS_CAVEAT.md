@@ -291,3 +291,61 @@ k=1 h/Mpc 的数值发散被消除，且低 k 结果不受影响（步数 10510 
 
 即高 k 衰减太慢（k=0.3 处高出 2 倍），低 k 又略低。这个斜率误差在 z=1000 就已存在，
 说明来自复合期的演化，不是晚期。首要嫌疑是 Silk 阻尼不足，其次是紧耦合只做到一阶。
+
+## 已修复：大质量中微子层级从未被初始化
+
+`initial_state` 只设置了无质量中微子的一行 `Y[L.fr(3)]`，**整个 `Fnu` 块保持在
+`L.allocate()` 给出的零值**。于是在 `rhs` 中
+
+```python
+clxnu = sum_q w_q epsT F_0 / sum_q w_q epsT     # = 0
+qnu   = sum_q w_q F_1    / sum_q w_q epsT       # = 0
+dgrho_nu = sum_species grho_s * clxnu           # = 0
+dgq_nu   = sum_species grho_s * qnu             # = 0
+```
+
+大质量中微子对 `dgrho`、`dgq` 的贡献恒为零——它既不受引力也自由流，也就完全
+没有对高 k 增长的压制作用。
+
+更糟的是 `nu_free` 的判据写成了
+
+```python
+nu_free = (ktau_rem > s.rsa_ktau_nu) & (k > s.rsa_kmin_r)
+```
+
+`tau_rem ≈ 13837`（今天与初始时刻之差），所以任何 `k > 2.2e-3 /Mpc` 从第一步就
+超过阈值，导数被整体清零，等于把这块永久钉死在初值。
+
+CAMB 的判据（equations.f90:313）同样是 k 相关的，但用的是**累积**共形时间：
+
+```
+tau_switch_no_nu_multpoles = max(15/k * switchBoost, min(taurend, matter_verydom_tau))
+```
+
+两处一起修：
+
+1. 在 `initial_state` 里按相对论极限初始化 `Fnu`：`F_0 = dg`、`F_1 = qr*epsT`、
+   `F_2 = pir`，这正好复现 `clxnu = dg`、`qnu = qr`，与光子/无质量中微子一致。
+2. `nu_free` 改用 `ktau = k*tau`（累积）与 `max(rsa_ktau_nu, k*taurend)` 比较。
+
+效果（`dc/delta_cdm`，z=1000，在 k=0.01 h/Mpc 归一化）：
+
+| k [h/Mpc] | 修复前 | 修复后 | CAMB |
+|---|---|---|---|
+| 0.05 | 1.489 | 1.404 | 1 |
+| 0.15 | 1.989 | 1.666 | 1 |
+| 0.30 | 2.370 | 1.818 | 1 |
+| 0.50 | 2.687 | 1.926 | 1 |
+
+高 k 偏差从 +169% 降到 +93%，方向对、幅度仍不够。
+
+## 仍未解决：高 k 传输函数形状（约 +90%@k=0.5 h/Mpc）
+
+目前最强嫌疑：在 z≈1000、k=0.5 h/Mpc 处 `k*tau ≈ 100`，而 `lmax_g = 24`，
+光子层级严重欠采样。但直接把 `lmax_g` 从 24 提到 60 得到**逐位相同**的结果，
+这一点本身需要解释——可能该区间的光子行被 clamp 掉了，`lmax` 根本没被用到。
+下一步应先确认 `tcu`/`rsa_g` 在复合期的实际取值，再决定是加 lmax 还是修 clamps。
+
+另：把中微子完全解冻（`rsa_ktau_nu=1e9, rsa_kmin_r=-1`）会在 a=0.76 发散，
+说明自由演化的大质量中微子层级本身不稳定。CAMB 用 `high_ktau` 把 lmax 降到 4
+而不是解冻，我们的截断方式与它不同，这一支暂不在生产路径上。

@@ -239,7 +239,30 @@ def initial_state(batch: "PerturbationBatch", a0: float):
     Y[L.scalar("pir")] = pir
     Y[L.scalar("etak")] = -eta * k / 2.0
     Y[L.fr(3)] = 4.0 / 21.0 / Rp15 * x ** 3
+    # Massive neutrinos are relativistic at a_start, so their hierarchy starts
+    # on the same adiabatic series as the massless one.  This block used to be
+    # left at the zero from L.allocate(), which made clxnu and qnu identically
+    # zero for all time: massive neutrinos then contributed nothing to dgrho or
+    # dgq, so their free-streaming suppression of high-k growth was missing.
+    # The weighting in rhs is
+    #     clxnu = sum_q w_q epsT F_0 / sum_q w_q epsT
+    #     qnu   = sum_q w_q F_1    / sum_q w_q epsT
+    # so F_0 = dg reproduces clxnu = dg and F_1 = qr * epsT reproduces qnu = qr,
+    # matching the photon/massless-neutrino values at early times.
+    n_s, n_q, n_l = L.n_species, L.n_q, L.lmax_nu + 1
+    epsT0 = np.transpose(1.0 / c0_vnu(batch, a0), (1, 2, 0))      # (S, nq, T)
+    Fnu0 = np.zeros((n_s, n_q, n_l, T))
+    Fnu0[..., 0, :] = dg[None, None, :]
+    Fnu0[..., 1, :] = qr[None, None, :] * epsT0
+    Fnu0[..., 2, :] = pir[None, None, :]
+    Y[L.offsets["Fnu"]] = Fnu0.reshape(L.offsets["Fnu"].stop - L.offsets["Fnu"].start, T)
     return Y
+
+
+def c0_vnu(batch: "PerturbationBatch", a0: float):
+    """Massive-neutrino velocity factor at scale factor ``a0`` (shape S,nq,T)."""
+    am = np.maximum(a0 * batch.mu0, 1e-30)
+    return 1.0 / np.sqrt(1.0 + (am[:, :, None] / NU_Q[None, None, :]) ** 2)
 
 
 def _l_coeff(k, l):
@@ -451,7 +474,14 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None):
     # (early times), mirroring CAMB's high_ktau switch.  Without this the
     # block has no sink and its cascade runs away.
     ktau_rem = k * c["tau_rem"]
-    nu_free = (ktau_rem > s.rsa_ktau_nu) & (k > s.rsa_kmin_r)
+    # CAMB: tau_switch_no_nu_multpoles = max(15/k * switchBoost,
+    #                                        min(taurend, matter_verydom_tau))
+    # i.e. k*tau > max(15, k*taurend), on the ACCUMULATED conformal time.
+    # Using k*tau_rem froze the hierarchy from the very first step (tau_rem is
+    # ~14000 early on, so every k in the workload exceeded the threshold),
+    # which is what left clxnu = qnu = 0.
+    _ktau_nu_mass = np.maximum(s.rsa_ktau_nu, k * c["taurend"])
+    nu_free = (ktau > _ktau_nu_mass) & (k > s.rsa_kmin_r)
     if np.any(nu_free):
         dFnu = np.where(nu_free[None, None, None, :], 0.0, dFnu)
     dY[L.offsets["Fnu"]] = dFnu.reshape(L.offsets["Fnu"].stop - L.offsets["Fnu"].start, T)
