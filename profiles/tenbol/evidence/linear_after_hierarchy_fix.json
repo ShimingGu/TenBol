@@ -1,0 +1,20 @@
+{
+  "what": "growth delta(0)/delta(1000) vs CAMB 2.0.5, after the tau_remaining + Fnu-gating fix",
+  "commit": "b7ba0b3",
+  "cosmology": {"h": 0.67, "omega_b": 0.0224, "omega_c": 0.120, "A_s": 2.1e-9,
+                "n_s": 0.965, "m_nu_sum": 0.06, "N_eff": 3.046},
+  "rows": [
+    {"k_h_per_mpc": 0.0010, "ours": 1171.028, "camb": 1177.247, "dev": -0.0053},
+    {"k_h_per_mpc": 0.0017, "ours": 1154.541, "camb": 1168.727, "dev": -0.0121},
+    {"k_h_per_mpc": 0.0030, "ours": 1121.808, "camb": 1149.806, "dev": -0.0244},
+    {"k_h_per_mpc": 0.0053, "ours": 1103.157, "camb": 1112.305, "dev": -0.0082},
+    {"k_h_per_mpc": 0.0093, "ours": 1024.754, "camb": 1048.218, "dev": -0.0224},
+    {"k_h_per_mpc": 0.0162, "ours": 923.437, "camb": 955.614, "dev": -0.0337},
+    {"k_h_per_mpc": 0.0282, "ours": 807.246, "camb": 843.148, "dev": -0.0426},
+    {"k_h_per_mpc": 0.0493, "ours": 729.474, "camb": 728.653, "dev": 0.0011},
+    {"k_h_per_mpc": 0.0860, "ours": 712.361, "camb": 691.213, "dev": 0.0306},
+    {"k_h_per_mpc": 0.1500, "ours": 704.385, "camb": 645.452, "dev": 0.0913}
+  ],
+  "worst": 0.0913,
+  "verdict": "m1d NOT met. Deviations run from -4.3% (k~0.03, BAO range) through 0 to +9.1% (k=0.15). Excluded by measurement: rsa_ktau (5/30/100/1e6 give the same at k>=0.03), inv_tau closure form (three variants bit-identical), lmax 24 vs 48 (bit-identical), dlna_max 0.005 vs 0.001 (bit-identical), neutrino freeze depth (all-l is best), neutrino mass (m_nu=1e-4 gives the same sign and similar size)."
+}
