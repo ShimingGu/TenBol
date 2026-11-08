@@ -1,0 +1,8 @@
+{
+  "what": "photon multipole magnitudes at a=0.0011, k=0.1005/Mpc, after the tau_rem fix",
+  "commit": "b7ba0b3",
+  "state": {"tcu": false, "rsa_g": false, "k_times_tau_rem": 1392.3},
+  "multipoles": {"l=0": 169.0, "l=1": 564.0, "l=2": 0.0, "l=3": 0.0,
+                 "l>=4": 0.0},
+  "reading": "With tcu=False AND rsa_g=False, the clamp mask is false, so dY for l>=2 should be non-zero -- yet every multipole from l=2 up is exactly 0 after 300 steps of dln a = 2e-4. Either the l>=2 rows are still being zeroed, or the initial state plus one short march cannot populate them. This is the next thing to check: it would explain why lmax 24 vs 48 is bit-identical (those rows carry no information) and why the high-k residual does not respond to any switch."
+}

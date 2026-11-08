@@ -1,0 +1,10 @@
+{
+  "what": "sensitivity of the growth ratio to rsa_ktau_nu (massive/massless neutrino switch)",
+  "commit": "b7ba0b3",
+  "rows": [
+    {"rsa_ktau_nu": 3,   "k=0.010": 0.9749, "k=0.030": 0.9322, "k=0.150": 1.0784},
+    {"rsa_ktau_nu": 30,  "k=0.010": 0.9761, "k=0.030": 0.9574, "k=0.150": 1.0913},
+    {"rsa_ktau_nu": 300, "k=0.010": 0.9333, "k=0.030": 0.9119, "k=0.150": 1.0915}
+  ],
+  "reading": "30 is already the best of the three; the high-k overshoot (+9%) does not respond to this switch at all. Combined with the earlier scans (rsa_ktau, inv_tau form, lmax, dlna_max, freeze depth, m_nu) the high-k error has no knob left in the neutrino or truncation sector."
+}
