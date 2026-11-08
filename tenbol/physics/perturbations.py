@@ -330,12 +330,12 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None):
     dgrho = dgrho_matter + grho_g * dg_e + grho_r * dr_e
     dgq = dgq_matter + grho_g * qg_e + grho_r * qr_e
 
-    # CAMB's cothxor = 1/tau where tau is measured back from today, so the
-    # truncation damps hard at late times.  Using the accumulated tau made
-    # 1/tau ~ 7e-5 against a free-streaming rate k ~ 6e-2, three orders too
-    # weak: the massive-neutrino cascade then grew to 1e36 (measured) and
-    # dragged the scalars with it.
-    inv_tau = 1.0 / np.maximum(c["tau_rem"], 1.0e-8)
+    # CAMB: cothxor = 1/tau with tau the conformal time FROM THE BIG BANG
+    # (equations.f90:2368).  That damps the highest multipole hard at early
+    # times (tau -> 0) and weakly today.  The previous form used the REMAINING
+    # time tau0 - tau, which inverts the direction: it barely damps where the
+    # hierarchy is being built and over-damps at late times.
+    inv_tau = 1.0 / np.maximum(c["tau"], 1.0e-30)
     z = (0.5 * dgrho / k + etak) / h
     sigma = z + 1.5 * dgq / k2
 
@@ -593,9 +593,24 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
         dln_target = np.where(target > a, np.log(np.maximum(target, 1e-300) / a), 0.0)
         tcu = c["kappa"] > (batch.k / s.tc_epsilon)
         dtau = 1.0 / c["h"]
+        ktau = batch.k * c["tau"]
+        ktau_g = np.maximum(s.rsa_ktau, batch.k * c["taurend"])
+        ktau_r = np.maximum(s.rsa_ktau_r, batch.k * c["taurend"])
+        rsa_g = (ktau > ktau_g) & (batch.k > s.rsa_kmin)
+        rsa_r = (ktau > ktau_r) & (batch.k > s.rsa_kmin_r)
         lim = np.full(T, s.dlna_max)
-        lim = np.where((batch.k * c["tau"]) < s.rsa_ktau,
-                       np.minimum(lim, s.dlna_acoustic / np.maximum(batch.k * dtau, 1e-30)), lim)
+        # Angular CFL.  This must apply exactly while the radiation hierarchies
+        # are FREE (neither tight-coupled nor replaced by RSA), because that is
+        # when they oscillate at rate k per unit conformal time.  The previous
+        # condition keyed on k*tau < rsa_ktau, which is the super-horizon phase
+        # where nothing oscillates: it switched the limiter OFF right when it
+        # was needed.  For k = 1 h/Mpc the free window tau ~ 130..330 then ran
+        # unconstrained and the polarization reached 1.9e6 (measured) while the
+        # photons stayed at 6e-3.
+        free = ~(tcu | rsa_g | rsa_r)
+        lim = np.where(free,
+                       np.minimum(lim, s.dlna_acoustic / np.maximum(batch.k * dtau, 1e-30)),
+                       lim)
         lim = np.where((batch.k * c["tau"]) < 1.0,
                        np.minimum(lim, s.dlna_superhorizon), lim)
         lim = np.where(~tcu,
