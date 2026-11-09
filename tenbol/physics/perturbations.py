@@ -83,6 +83,11 @@ class PerturbationSettings:
     # around 2.8), unlike dlna_acoustic which buys the photons ~2% phase
     # accuracy.  Sharing dlna_acoustic instead made every k point take minutes.
     dlna_nu: float = 1.0
+    # CAMB demotes the ladder to lmaxnu_high_ktau = 4 times nu_l_accuracy_boost,
+    # and nu_l_accuracy_boost is Accuracy%lAccuracyBoost (equations.f90:511).
+    # The pinned reference runs l_accuracy_boost = 2.0, so the reference CAMB
+    # actually truncates at 8, not at 4.
+    lmax_nu_high_ktau: int = 8
     dlna_min: float = 1.0e-6
     dlna_acoustic: float = 0.02
     stiff_factor: float = 0.2
@@ -528,14 +533,16 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     # gets l = 4 as its top row and every row above it is pinned to zero.
     # This piece is mandatory: with the switch time corrected but lmax left at
     # 12 the run dies at k = 2.01 /Mpc, a = 7.06e-3.
+    l_hi = min(int(s.lmax_nu_high_ktau), L.lmax_nu)
     hi_ktau = (ktau > max(20.0, float(L.lmax_nu - 4))) & (k > s.rsa_kmin_r)
     if np.any(hi_ktau):
         m = hi_ktau[None, None, None, :]
-        dFnu[..., 4, :] = np.where(
+        dFnu[..., l_hi, :] = np.where(
             m,
-            kb * vT * Fnu[..., 3, :] - 5.0 * Fnu[..., 4, :] * inv_tau[None, None, :],
-            dFnu[..., 4, :])
-        for ll in range(5, L.lmax_nu + 1):
+            kb * vT * Fnu[..., l_hi - 1, :]
+            - (l_hi + 1) * Fnu[..., l_hi, :] * inv_tau[None, None, :],
+            dFnu[..., l_hi, :])
+        for ll in range(l_hi + 1, L.lmax_nu + 1):
             dFnu[..., ll, :] = np.where(m, 0.0, dFnu[..., ll, :])
     # Freeze the massive-neutrino hierarchy while k*(tau0 - tau) is large
     # (early times), mirroring CAMB's high_ktau switch.  Without this the

@@ -24,6 +24,17 @@
       "note": "this corrects an earlier note in session_log.json that claimed both transfer_q and kh are h/Mpc; kh (the matter-power grid) IS h/Mpc, transfer_q is not"
     }
   },
+  "eliminated_suspects": {
+    "neutrino_ladder_height": "lmax_nu_high_ktau 4 -> 8: the pinned reference runs l_accuracy_boost = 2.0 and CAMB computes lmaxnu_tau = int(lmaxnu_high_ktau*nu_l_accuracy_boost) (equations.f90:511,672), so the reference truncates at 8, not 4. Measured effect on the high-k mean: +0.8735% -> +0.8647%, i.e. none.",
+    "neutrino_ladder_step": "dlna_nu 1.0 vs 0.20 gave bit-identical ratios (1.0161 1.0068 1.0080 1.0074), so the ladder is not step-limited anywhere in k <= 5 h/Mpc",
+    "component_split": "the delta_cdm and delta_baryon ratios agree with each other to better than 5e-4 at every k",
+    "dm_assembly": "rec['dm'] is dgrho_matter/grho_matter with the species energy weights, which is what CAMB's delta_tot is",
+    "delta_p_b": "CAMB's own default is delta_p_b = cs2*clxb (equations.f90:2466-2467, evolve_TM off), identical to ours",
+    "reference_convergence": "CAMB with accuracy/l_accuracy/time_step boost at 1.0 vs 2.0 differs by at most 0.027% over k = 0.3..5 h/Mpc. boost 4 and 8 cannot run at all: CAMB hard-stops with 'Need to increase max_l_evolve', a compile-time constant.",
+    "time_integrator": "quartering dlna_max and dlna_acoustic moved the plateau by 0.0002",
+    "z_dependence_measured": "the same ten modes read +0.76% at z=0, +0.65% at z=0.5, +0.53% at z=1, +0.34% at z=2, so it is a growth-rate offset, not a constant"
+  },
+  "what_that_leaves": "a genuine error shared by every component: +0.86% at k >= 0.3 h/Mpc at z = 0, easing to +0.34% at z = 2. The remaining suspects are the shared evolution terms (etak, h, slip) and the initial conditions - not the neutrino sector, not the reference, not the integrator.",
   "still_open": {
     "absolute_high_k_offset": "+0.87% at k >= 0.3 h/Mpc against a dense reference, +1.10% with an effectively massless neutrino species",
     "k_10_hMpc": "still NumericalFailure at a = 8.4e-5; the first non-finite values appear in the photon/baryon tight-coupling terms, not in the neutrino ladder"
