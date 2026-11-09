@@ -1,0 +1,32 @@
+{
+  "question": "after the neutrino switch fix the high-k residual looked like a BAO phase oscillation (+2.5% at k=0.102, -0.35% at k=0.196). Is it a phase error in the acoustic sector?",
+  "answers": {
+    "low_k_edge_is_not_ours": {
+      "observed": "k = 1e-4 h/Mpc read -2.32% and every point below it was nonsense (308, 2.4e2, 4.5e6)",
+      "cause": "CAMB's transfer grid starts at exactly 1e-4 h/Mpc, so np.interp was extrapolating below it; ref['kh'] spans 1.000e-04 .. 2.000e+01",
+      "proof": "extending the comparison to 1e-5..1e-3 gives 308.68 28.80 242.05 4468933.58 248.45 for k < 1e-4, then 0.9957 1.0003 1.0006 1.0003 0.9995 0.9985 above it",
+      "also": "the same k = 1e-4 point reads -0.43% with a 4096-point reference and -2.32% with 2048 points, so even the point on the edge is reference-limited",
+      "conclusion": "no solver error here; the workload grid must start at k >= 2e-4 h/Mpc to be comparable"
+    },
+    "z_dependence_of_the_low_k_residual": "none: the ratios at z = 0, 0.5, 1, 2 agree to better than 1e-4",
+    "high_k_is_not_a_bao_phase_error": {
+      "apparent_oscillation": "25-point grid over 0.02..0.4 h/Mpc gave 1.0246 (k=0.167), 0.9944 (k=0.0789), spread 3.02pp, period matching BAO in ln k",
+      "test": "compare our delta_cdm and delta_baryon against CAMB's components separately, normalised at k = 0.02",
+      "result_cdm": "0.9882 .. 1.0044",
+      "result_baryon": "0.9878 .. 1.0048",
+      "result_total": "0.9899 .. 1.0062",
+      "key_observation": "the cdm and baryon curves agree with each other to better than 5e-4 at every k, so the split between the two components is right and the residual is common to both",
+      "conclusion": "the residual is a common amplitude/evolution offset of about +0.3% at low k and -0.5% at high k, not a differential acoustic effect; most of the 3pp swing seen in P(k) came from reference interpolation, not from the phase of the wiggles"
+    },
+    "transfer_q_units": {
+      "found": "ref['transfer_q'] is in 1/Mpc, not h/Mpc",
+      "evidence": "indexing it with k in h/Mpc produced a smooth monotonic 1.00 -> 1.38 offset; indexing with k*h reproduces a flat ratio",
+      "note": "this corrects an earlier note in session_log.json that claimed both transfer_q and kh are h/Mpc; kh (the matter-power grid) IS h/Mpc, transfer_q is not"
+    }
+  },
+  "still_open": {
+    "absolute_high_k_offset": "+0.87% at k >= 0.3 h/Mpc against a dense reference, +1.10% with an effectively massless neutrino species",
+    "k_10_hMpc": "still NumericalFailure at a = 8.4e-5; the first non-finite values appear in the photon/baryon tight-coupling terms, not in the neutrino ladder"
+  },
+  "tests": "6 passed (python -m pytest tests/tenbol)"
+}
