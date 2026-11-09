@@ -32,8 +32,11 @@
     "delta_p_b": "CAMB's own default is delta_p_b = cs2*clxb (equations.f90:2466-2467, evolve_TM off), identical to ours",
     "reference_convergence": "CAMB with accuracy/l_accuracy/time_step boost at 1.0 vs 2.0 differs by at most 0.027% over k = 0.3..5 h/Mpc. boost 4 and 8 cannot run at all: CAMB hard-stops with 'Need to increase max_l_evolve', a compile-time constant.",
     "time_integrator": "quartering dlna_max and dlna_acoustic moved the plateau by 0.0002",
-    "z_dependence_measured": "the same ten modes read +0.76% at z=0, +0.65% at z=0.5, +0.53% at z=1, +0.34% at z=2, so it is a growth-rate offset, not a constant"
+    "z_dependence_measured": "the same ten modes read +0.76% at z=0, +0.65% at z=0.5, +0.53% at z=1, +0.34% at z=2, so it is a growth-rate offset, not a constant",
+    "etak_z_equations": "CAMB equations.f90:2377-2378 give z = (0.5*dgrho/k + etak)/adotoa and dz = -adotoa*z - 0.5*dgrho/k, and 2431 gives ayprime(ix_etak) = 0.5*dgq. Ours match all three exactly, so the synchronous-gauge constraint equations are out.",
+    "initial_conditions": "a_start is not the error, and the test is a reverse proof: 1e-7 is the BEST setting (all ten modes 1.0051..1.0161, max |dev| 1.60%), 1e-6 already degrades the top of the range (k=5 reads 0.9468) and 3e-6 wrecks it (k=3.66 reads 0.189), because the superhorizon series needs x = k*tau0 << 1. The series is right, so the residual accumulates at late times. Note: comparing only the mean of the ratio is misleading here - it moved 0.84pp between 1e-7 and 1e-6 while the low-k points were bit-identical, because the high-k points failed asymmetrically."
   },
+  "residual_shape": "not a flat plateau: k=0.3 reads +1.60%, k=1.05 +0.70%, k=5.0 +0.51%, so it falls with k; combined with the z dependence (+0.76% at z=0 down to +0.34% at z=2) it is a late-time growth offset that the acoustic region modulates.",
   "what_that_leaves": "a genuine error shared by every component: +0.86% at k >= 0.3 h/Mpc at z = 0, easing to +0.34% at z = 2. The remaining suspects are the shared evolution terms (etak, h, slip) and the initial conditions - not the neutrino sector, not the reference, not the integrator.",
   "still_open": {
     "absolute_high_k_offset": "+0.87% at k >= 0.3 h/Mpc against a dense reference, +1.10% with an effectively massless neutrino species",
