@@ -50,7 +50,7 @@ class PowerResult:
         i = int(np.argmin(np.abs(self.z - z_ref)))
         return self.delta_m / self.delta_m[:, :, [i]]
 
-    def growth_callable(self, k_index: int = 0):
+    def growth_callable(self, k_index: int = 0, cosmo_index: int = 0):
         """``growth(a) -> D(a)`` normalised to ``D(1) = 1``, for HMcode.
 
         HMcode takes a callable, and the single-fluid ODE in ``sigma.py`` reads
@@ -58,8 +58,8 @@ class PowerResult:
         0.28%.  So hand it the solver: at a small ``k`` the matter delta *is*
         the scale-independent growth factor, which is the quantity HMcode wants.
 
-        The first cosmology in the batch is used, matching HMcode's one-cosmology
-        construction.
+        ``cosmo_index`` selects which trajectory in the batch to use, since
+        HMcode is built one cosmology at a time.
         """
         zs = np.asarray(self.z, dtype=np.float64)
         a_all = 1.0 / (1.0 + zs)
@@ -69,7 +69,7 @@ class PowerResult:
         # z = 0 and 1938 at z = 500 before this was fixed).
         order = np.argsort(a_all)
         a = a_all[order]
-        d = np.asarray(self.delta_m[0, k_index, :], dtype=np.float64)[order]
+        d = np.asarray(self.delta_m[cosmo_index, k_index, :], dtype=np.float64)[order]
         if a[-1] < 1.0:
             # The grid stops short of today: hold the last value rather than
             # inventing a slope, and record that in the docstring above.
@@ -90,6 +90,81 @@ class PowerResult:
             return out
 
         return growth
+
+
+def matter_power_nl(cosmologies: CosmologyBatch, k_h, redshifts,
+                    settings: PerturbationSettings | None = None,
+                    reionization: Reionization | None = None,
+                    use_cache: bool = True,
+                    k_grid_size: int = 128,
+                    k_range: tuple[float, float] = (1.0e-4, 20.0)) -> np.ndarray:
+    """Nonlinear matter power from HMcode-2020, ``(n_c, n_k, n_z)`` in (Mpc/h)^3.
+
+    The halo model is driven by this code's own linear spectrum and growth:
+    ``PowerResult.growth_callable`` supplies ``D(a)`` to 0.33% of CAMB's
+    ``delta_tot`` where ``sigma.linear_growth`` reads 1.86% high.
+
+    Three things are mandatory and each fails silently if omitted:
+
+    * ``terms`` must be ``sigma.growth_terms``.  Without it Mead's dc/Dv fits run
+      in the Einstein-de Sitter limit, which costs 28% of the high-k power.
+    * the linear spectrum must be the one at the *tabulation* redshift (z = 0),
+      which is what HMcode rescales from; passing P at some other z double-counts
+      the growth.
+    * the solve must run on a **dense internal k grid**, not the caller's.  The
+      halo model integrates ``Delta^2(k) W^2(kR)`` over ln k to get sigma(R), and
+      isolates the BAO wiggle by smoothing a 512-point table; a handful of k
+      points destroys both.  Measured, a two-point grid gave 27% error at
+      k = 1 h/Mpc on a call that is accurate to 0.86% on a dense grid.  So the
+      solve uses ``k_grid_size`` points over ``k_range`` and the result is
+      interpolated back to ``k_h``.
+
+    Known accuracy: 0.48-0.88% max deviation across the workload apart from
+    ``sum m_nu = 0.30 eV``, which reaches 1.40%.  The 0.5% target is not yet met.
+    """
+    from tenbol.physics.hmcode import HMcode2020
+    from tenbol.physics.sigma import growth_terms
+
+    k_out = np.atleast_1d(np.asarray(k_h, dtype=np.float64))
+    z_out = np.atleast_1d(np.asarray(redshifts, dtype=np.float64))
+    k_in = np.geomspace(float(k_range[0]), float(k_range[1]), int(k_grid_size))
+    # HMcode tabulates D(a) over a = 1e-3..1, so the growth callable needs a grid
+    # spanning that range, not just the redshifts the caller asked about.
+    z_grid = np.unique(np.concatenate([[0.0], z_out, np.geomspace(0.1, 1000.0, 24)]))
+    lin = matter_power(cosmologies, k_in, z_grid, settings=settings,
+                       reionization=reionization, use_cache=use_cache)
+    (bg, _th), _ = _background_pair(cosmologies, reionization)
+
+    parts = bg.grho_parts(1.0)
+    tot = np.asarray(bg.grho(1.0), dtype=np.float64)
+    om_m = (np.asarray(parts["c"]) + np.asarray(parts["b"])
+            + np.asarray(parts["nu_mass"])) / tot
+    om_b = np.asarray(parts["b"]) / tot
+    om_c = np.asarray(parts["c"]) / tot
+
+    n_c = int(np.asarray(cosmologies.h).size)
+    k_pivot = 0.05
+    out = np.full((n_c, k_out.size, z_out.size), np.nan, dtype=np.float64)
+    i0 = int(np.argmin(np.abs(z_grid)))       # the tabulation redshift, z = 0
+    for ci in range(n_c):
+        h = float(np.asarray(cosmologies.h)[ci])
+        k_mpc = k_in * h
+        a_s = float(np.asarray(cosmologies.A_s)[ci])
+        n_s = float(np.asarray(cosmologies.n_s)[ci])
+        p_lin0 = ((lin.delta_m[ci, :, i0] ** 2)
+                  * (2.0 * np.pi ** 2 / k_mpc ** 3)
+                  * a_s * (k_mpc / k_pivot) ** (n_s - 1.0) * h ** 3)
+        ok = np.isfinite(p_lin0) & (p_lin0 > 0.0)
+        growth = lin.growth_callable(k_index=0, cosmo_index=ci)
+        for jz, zz in enumerate(z_out):
+            model = HMcode2020(
+                omega_m=float(om_m[ci]), omega_b=float(om_b[ci]),
+                omega_c=float(om_c[ci]), omega_nu=0.0, h=h, n_s=n_s,
+                k_lin=k_in[ok], p_lin=p_lin0[ok], growth=growth,
+                terms=lambda zq, b=bg: growth_terms(b, zq), z=float(zz))
+            p_in = np.asarray(model.power(k_in[ok]))
+            out[ci, :, jz] = np.interp(np.log(k_out), np.log(k_in[ok]), p_in)
+    return out
 
 
 # --- caching -----------------------------------------------------------

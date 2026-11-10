@@ -1,0 +1,26 @@
+{
+  "question": "does the 0.86% hold across the workload, and does option A (a high-k window on the dewiggle) have anything to fix?",
+  "multi_cosmology_sweep": {
+    "domain": "omega_b 0.020-0.0245, omega_c 0.10-0.16, h 0.60-0.80, A_s 1.5e-9-2.7e-9, n_s 0.92-1.02, sum m_nu 0.06-0.30 eV",
+    "max_abs_dev": {
+      "high_Om": 0.00476,
+      "high_corner": 0.00500,
+      "low_h": 0.00744,
+      "high_As_ns": 0.00748,
+      "low_corner": 0.00761,
+      "low_As_ns": 0.00817,
+      "centre": 0.00877,
+      "mnu_0.30": 0.01396
+    },
+    "worst": 0.01396,
+    "verdict": "no, it does not hold. Seven of eight cases land in 0.48-0.88% but m_nu = 0.30 degrades to 1.40%, i.e. the neutrino-mass edge of the domain is the weak spot. Only 'high corner' reaches the 0.5% target."
+  },
+  "where_the_error_sits": "every case peaks at the top of the k range (k@max is 4.0-5.0 for seven of eight), so the high-k tail is the common failure, not the mid-range that the Delta^2 dewiggle fix repaired",
+  "option_A_is_moot": {
+    "plan": "force the extracted wiggle to zero above some k, to mimic what CAMB's 3-sigma edge rule does implicitly",
+    "measurement": "the wiggle is already zero: wiggle/P is -1.8e-4 at k = 0.50, +8.6e-4 at k = 1.00, +5.7e-4 at 1.50, +3.3e-4 at 1.99 and exactly 0.000000 from k = 2.51 upward, for both m_nu = 0.06 and 0.30",
+    "why": "f = exp(-(k*sigv)^2) with sigv = 5.83 is exp(-590) at k = 4.17, and the 3-sigma edge rule leaves the top 0.75 in ln k of the table unsmoothed, so P - ratio*P_nw vanishes there by construction",
+    "conclusion": "the dewiggle contributes nothing above k = 2.5, so a high-k window on it would be a no-op. The k = 4-5 error has to come from the 1-halo or 2-halo normalisation instead."
+  },
+  "what_this_changes": "option A is dropped as vacuous; option B (wiring the nonlinear pipeline into power.py with a test) proceeds. The high-k tail and the m_nu = 0.30 case stay open and are recorded as such."
+}
