@@ -1,0 +1,13 @@
+{
+  "what": "PowerResult.growth_callable(k_index) in power.py: wraps the solver's own matter delta as a growth(a) -> D(a) callable normalised to D(1) = 1, which is the interface HMcode2020 already expects.",
+  "why": "HMcode was reading sigma.linear_growth - a single-fluid ODE that runs 1.86% high at z = 0 against CAMB's delta_tot - while the perturbation solver runs 0.28%. The solver is the more accurate of the two by 6.6x, and PowerResult.growth() showed the data was already there.",
+  "bugs_found_while_wiring_it": {
+    "interp_axis": "np.interp requires an ascending x axis, and a = 1/(1+z) runs opposite to z. Sorting by z handed it a descending axis, which silently interpolated against the wrong end: ratios came out as 0.0128 at z = 0 and 1938 at z = 500.",
+    "normalisation_reference": "a false alarm in my own test script. g(a) is already normalised to D(1) = 1 while the CAMB column was normalised at z = 100, so every z showed the same constant 0.0128 - that is D(z=100)/D(1) = 1/78, the value of delta_tot at z = 0."
+  },
+  "result": {
+    "solver": {"z_0": 1.00283, "z_10": 1.00050, "z_30": 1.00008, "z_50": 1.00034, "z_100": 1.0, "z_200": 0.99876, "z_300": 0.99708, "z_500": 0.99668, "max_abs_dev": 0.003320},
+    "ode": {"z_0": 1.01862, "z_10": 1.01537, "z_30": 1.01167, "z_50": 1.00767, "z_100": 1.0, "z_200": 0.99069, "z_300": 0.98786, "z_500": 1.00121, "max_abs_dev": 0.018619}
+  },
+  "verdict": "the input HMcode sees goes from 1.86% error to 0.33%, a 5.6x improvement. Option A is closed. It does not move the nonlinear gap itself (27.5%), which is a separate HMcode problem and the next item."
+}

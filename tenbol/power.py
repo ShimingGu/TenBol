@@ -50,6 +50,38 @@ class PowerResult:
         i = int(np.argmin(np.abs(self.z - z_ref)))
         return self.delta_m / self.delta_m[:, :, [i]]
 
+    def growth_callable(self, k_index: int = 0):
+        """``growth(a) -> D(a)`` normalised to ``D(1) = 1``, for HMcode.
+
+        HMcode takes a callable, and the single-fluid ODE in ``sigma.py`` reads
+        1.86% high at z = 0 against CAMB's ``delta_tot`` while this solver reads
+        0.28%.  So hand it the solver: at a small ``k`` the matter delta *is*
+        the scale-independent growth factor, which is the quantity HMcode wants.
+
+        The first cosmology in the batch is used, matching HMcode's one-cosmology
+        construction.
+        """
+        zs = np.asarray(self.z, dtype=np.float64)
+        a_all = 1.0 / (1.0 + zs)
+        # np.interp requires an ascending x axis, and a = 1/(1+z) runs the other
+        # way from z: sorting by z would hand it a descending array and silently
+        # interpolate against the wrong end (measured: solver/CAMB read 0.0128 at
+        # z = 0 and 1938 at z = 500 before this was fixed).
+        order = np.argsort(a_all)
+        a = a_all[order]
+        d = np.asarray(self.delta_m[0, k_index, :], dtype=np.float64)[order]
+        if a[-1] < 1.0:
+            # The grid stops short of today: hold the last value rather than
+            # inventing a slope, and record that in the docstring above.
+            a = np.concatenate([a, [1.0]])
+            d = np.concatenate([d, d[-1:]])
+        d = d / d[-1]
+
+        def growth(a_query) -> np.ndarray:
+            return np.interp(np.atleast_1d(np.asarray(a_query, dtype=np.float64)), a, d)
+
+        return growth
+
 
 # --- caching -----------------------------------------------------------
 # Keyed on the cosmological parameters only.  Background/ThermalHistory are the
