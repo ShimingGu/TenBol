@@ -1,0 +1,16 @@
+{
+  "what": "first end-to-end call of matter_power_nl (the new power.py entry point), on one cosmology at z = 0, k = 0.1 and 1.0 h/Mpc",
+  "result": {
+    "k_0.1": {"ours": 5682.56653604, "camb": 5490.62117832, "ratio": 1.03495877},
+    "k_1.0": {"ours": 381.04023253, "camb": 376.66528188, "ratio": 1.01161496},
+    "max_abs_dev": 0.03496
+  },
+  "the_important_comparison": {
+    "same_hmcode_with_camb_linear_input": {"k_0.1": 1.0004, "k_1.0": 0.9951, "max_abs_dev": 0.00877},
+    "same_hmcode_with_our_linear_input": {"max_abs_dev": 0.03496},
+    "reading": "identical halo model, identical 48-point grid, only the input spectrum changes - and the error grows from 0.88% to 3.50%. So the linear spectrum's BAO-peak error, measured at +2.5% in P and about +1.2% in delta, is AMPLIFIED roughly fourfold through the nonlinear chain rather than washed out."
+  },
+  "why_that_matters": "earlier I argued that a 2% linear input could not produce the 25% nonlinear deficit that was later traced to the EdS fallback - that was true and remains true. But it does mean the linear residual is not free: it is now the largest single contributor to the nonlinear error, and fixing the BAO peak would improve matter_power_nl directly.",
+  "correction_to_the_previous_commit": "commit 81bc712 recorded the nonlinear pipeline as implemented but not verified end to end. This call completed, so that caveat is lifted: the entry point runs and returns sane numbers. What it also shows is that the 0.48-0.88% figures in the multi-cosmology sweep describe HMcode given CAMB's linear spectrum, not the end-to-end pipeline.",
+  "state": "linear 0.17% median / +2.5% at the BAO peak; HMcode alone 0.48-0.88%; end-to-end 3.5% at k = 0.1. The 0.5% nonlinear target is not met and the linear residual is the leading term."
+}
