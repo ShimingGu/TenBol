@@ -68,7 +68,16 @@
     },
     "reading": "below z ~ 200, where the ODE's matter-era initial condition is valid, the two independent paths differ by up to 7.4% (z = 0), and the perturbation solver is the one that agrees with CAMB to ~1% (see where_the_error_grows). So linear_growth carries a systematic offset of that order. Above z ~ 200 the ODE is extrapolating outside its validity range (a_start = 3e-2) and the comparison means nothing.",
     "impact": "HMcode reads this growth normalisation directly as its x term, so a 7% offset here propagates into the nonlinear P_NL. That makes m1e's 'validated' status unsafe even though no linear comparison flagged it.",
-    "next": "settle which of the two is right by comparing both against CAMB's own growth factor over 0 < z < 100, then fix linear_growth or the solver accordingly. Do not trust the HMcode normalisation until this closes."
+    "verdict_from_camb": {
+      "method": "CAMB delta_tot at k = 0.02 h/Mpc, all normalised at z = 100, put beside linear_growth and beside the solver's total matter dm",
+      "camb_values": {"z_0": 78.09015, "z_10": 9.02580, "z_30": 3.22040, "z_50": 1.96531, "z_100": 1.0, "z_200": 0.50721, "z_300": 0.33967, "z_500": 0.20136},
+      "ode_over_camb": {"z_0": 1.01862, "z_10": 1.01537, "z_30": 1.01167, "z_50": 1.00767, "z_100": 1.0, "z_200": 0.99068, "z_300": 0.98786, "z_500": 1.00118},
+      "solver_over_camb": {"z_0": 1.00283, "z_10": 1.00050, "z_30": 1.00008, "z_50": 1.00035, "z_100": 1.0, "z_200": 0.99876, "z_300": 0.99707, "z_500": 0.99665},
+      "verdict": "the perturbation solver is right to +-0.3%; linear_growth is off by -1.2% to +1.9%",
+      "correction_of_the_7pct_figure": "the earlier 7.4% was a comparison error on my side: it normalised at z = 1000 (outside the ODE's validity) and compared dc, the CDM component, against an ODE for total matter. Against CAMB's delta_tot and using dm, the honest gap is the ~2% in this table.",
+      "impact": "HMcode reads this growth normalisation as its x term, so the ~2% is a real input error for P_NL; m1e's validated status does not survive it"
+    },
+    "next": "fix linear_growth against CAMB's delta_tot over 0 < z < 500, then rerun whatever HMcode consumes its normalisation for. The solver itself does not need changing on this evidence."
   },
   "residual_shape": "not a flat plateau: k=0.3 reads +1.60%, k=1.05 +0.70%, k=5.0 +0.51%, so it falls with k; combined with the z dependence (+0.76% at z=0 down to +0.34% at z=2) it is a late-time growth offset that the acoustic region modulates.",
   "what_that_leaves": "a genuine error shared by every component: +0.86% at k >= 0.3 h/Mpc at z = 0, easing to +0.34% at z = 2. The remaining suspects are the shared evolution terms (etak, h, slip) and the initial conditions - not the neutrino sector, not the reference, not the integrator.",
