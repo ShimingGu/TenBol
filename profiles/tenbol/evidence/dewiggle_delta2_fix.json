@@ -1,0 +1,14 @@
+{
+  "bug": "the E&H no-wiggle split mixed two conventions. CAMB's HMcode works in Delta^2 = k^3 P/(2 pi^2) throughout, and halofit.f90's Pk_nowiggle is built as k**(n_s+3)*T^2 - that is Delta^2, not P. Passing our P(k) as the numerator while the denominator was Delta^2 put a factor k^3 between them.",
+  "evidence": "with the conventions mixed, P/P_nw ran 3.411 at k = 0.0201, 0.02496 at k = 0.1005 and 0.00022 at k = 0.5023 - four orders of magnitude of drift instead of hovering near 1. The 0.25-wide Gaussian then treated that whole slope as signal, which is why the first attempt scored 19%.",
+  "fix": "_build_wiggle converts the linear spectrum to Delta^2 before forming the ratio and converts the extracted wiggle back to P afterwards; _eisenstein_hu_nowiggle documents that it returns Delta^2.",
+  "result": {
+    "before_log_P_smoothing": {"max_abs_dev_48pt": 0.01073, "k_0.093": 0.99568, "k_0.474": 0.99437, "k_4.171": 0.99856},
+    "after_delta2_split_48pt": {"max_abs_dev": 0.00859, "k_0.093": 1.00142, "k_0.474": 1.00297, "k_0.979": 0.99879, "k_2.021": 0.99731, "k_4.171": 0.99229},
+    "after_delta2_split_camb_grid": {"max_abs_dev": 0.00877, "k_0.093": 1.00043, "k_0.474": 0.99681, "k_0.979": 0.99507, "k_2.021": 0.99415, "k_4.171": 0.99172}
+  },
+  "what_moved": "the mid-range improved a lot: k = 0.474 went from 0.99437 (0.56% low) to 1.00297, and k = 0.093 from 0.99568 to 1.00142. Net max|dev| 1.073% -> 0.859%.",
+  "what_regressed": "the high-k point got slightly worse: k = 4.171 went from 0.99856 to 0.99229. At that wavenumber f = exp(-(k*sigv)^2) is exp(-590) ~ 0, so the dewiggle subtracts the extracted wiggle in full - which means the new extraction leaves a small non-zero wiggle where the old one left essentially none.",
+  "performance_note": "_build_wiggle runs once per cosmology when the tables are built: the 512-point O(n^2) convolution is ~2.6e5 multiply-adds, around a millisecond, against a _build_tables that already loops 256 mass points with several integrals each. Per-k evaluation still costs one np.interp on the 512-point table. So the cost is one-off and does not enter the hot path.",
+  "state": "nonlinear max|dev| = 0.859% against a 0.5% requirement, from 28.4% two rounds ago"
+}

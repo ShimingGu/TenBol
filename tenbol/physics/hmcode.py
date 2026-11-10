@@ -25,6 +25,8 @@ import numpy as np
 from scipy.interpolate import CubicSpline
 from scipy.special import sici
 
+from tenbol.constants import T_CMB0_DEFAULT
+
 __all__ = ["HMcode2020", "HMParameters"]
 
 # Fixed HMcode constants (halofit.f90 module data)
@@ -45,6 +47,12 @@ FDAMP_MIN = 1.0e-3
 FDAMP_MAX = 0.99
 ALPHA_MIN = 0.5
 ALPHA_MAX = 2.0
+# Wiggle-isolation table, from halofit.f90:197-202
+KMIN_WIGGLE = 5.0e-3      # h/Mpc
+KMAX_WIGGLE = 5.0
+NK_WIGGLE = 512
+WIGGLE_SIGMA = 0.25       # Gaussian width in ln k
+KNORM_NOWIGGLE = 0.03     # no-wiggle spectrum is pinned to the linear one here
 
 
 @dataclass
@@ -324,36 +332,62 @@ class HMcode2020:
         return np.clip(np.nan_to_num(out, nan=0.0), 0.0, 1.0)
 
     def _build_wiggle(self):
-        """Isolate the BAO wiggle as P(k) minus its Gaussian-smoothed version.
+        """Isolate the BAO wiggle the way CAMB's ``calculate_psmooth`` does.
 
-        halofit.f90's calculate_psmooth smooths P/P_nowiggle with a Gaussian of
-        width ``wiggle_sigma = 0.25`` in log k; smoothing log P directly over the
-        same width gives the same broadband component to the accuracy that
-        matters here, and avoids porting the Eisenstein & Hu no-wiggle fit.
+        halofit.f90:1853-1873 divides by an Eisenstein & Hu *no-wiggle* spectrum,
+        smooths that ratio with a Gaussian of width ``wiggle_sigma = 0.25`` in log
+        k, then multiplies the no-wiggle spectrum back.  Smoothing log P directly -
+        what this method used to do - folds the ~k^-3 broadband slope into the
+        smooth part.
+
+        Everything here is computed in ``Delta^2 = k^3 P / (2 pi^2)`` because that
+        is CAMB's internal convention (``Pk_nowiggle`` is built as
+        ``k**(n_s+3) * T^2``).  Mixing conventions puts a k^3 between the ratio's
+        numerator and denominator; measured, ``P/P_nw`` then runs from 3.41 at
+        k = 0.02 down to 2.2e-4 at k = 0.5 instead of hovering near 1, and the
+        smoother swallows that slope as signal - which is exactly how the earlier
+        attempt lost 18 percentage points.
         """
-        lnk = self._lnk
-        dlnk = float(np.median(np.diff(lnk)))
-        if dlnk <= 0.0:
-            self._p_wiggle = np.zeros_like(self.p_lin)
-            self._sigv = 0.0
-            return
-        lnp = np.log(self.p_lin)
-        # Gaussian smoothing in ln k with sigma = 0.25 (pixels = sigma / dlnk)
-        n = lnp.size
-        half = max(1, int(np.ceil(4.0 * 0.25 / dlnk)))
-        x = np.arange(-half, half + 1) * dlnk
-        ker = np.exp(-0.5 * (x / 0.25) ** 2)
-        ker /= ker.sum()
-        lnp_s = np.convolve(np.pad(lnp, half, mode="edge"), ker, mode="same")[half:half + n]
-        self._p_wiggle = np.exp(lnp) - np.exp(lnp_s)
+        lnk = np.log(np.geomspace(KMIN_WIGGLE, KMAX_WIGGLE, NK_WIGGLE))
+        dx = float(lnk[1] - lnk[0])
+        kk = np.exp(lnk)
+        p_lin = np.interp(lnk, self._lnk, self.p_lin)
+        d2_lin = p_lin * kk ** 3 / (2.0 * PI ** 2)
+        d2_nw = _eisenstein_hu_nowiggle(
+            kk, omega_m=self.omega_m, omega_b=self.omega_b,
+            h=self.h, n_s=self.n_s)
+        # Pin the no-wiggle spectrum to the linear one at the normalisation
+        # wavenumber, as calculate_nowiggle does with knorm = 0.03.
+        j = int(np.argmin(np.abs(kk - KNORM_NOWIGGLE)))
+        if d2_nw[j] > 0.0:
+            d2_nw = d2_nw * (d2_lin[j] / d2_nw[j])
+        ratio = d2_lin / np.maximum(d2_nw, 1e-300)
 
-        # Velocity dispersion sigma_v^2 = (1/6pi^2) int dk P(k), R -> 0 limit of
-        # CAMB's sigmaV; sets how fast the wiggle is damped away.
+        # CAMB leaves points within nsig = 3 sigma of either end unsmoothed, and
+        # normalises by the kernel weight actually used.
+        n = ratio.size
+        idx = np.arange(n)
+        kernel = np.exp(-0.5 * (idx * dx / WIGGLE_SIGMA) ** 2)
+        smoothed = np.empty(n)
+        edge = 3.0 * WIGGLE_SIGMA
+        for i in range(n):
+            if lnk[i] - lnk[0] < edge or lnk[-1] - lnk[i] < edge:
+                smoothed[i] = ratio[i]
+            else:
+                w = kernel[np.abs(idx - i)]
+                smoothed[i] = float(np.sum(ratio * w) / np.sum(w))
+
+        self._lnk_wiggle = lnk
+        # Back to P units: _dewiggle applies the k^3/(2 pi^2) conversion itself.
+        self._p_wiggle = (d2_lin - smoothed * d2_nw) * 2.0 * PI ** 2 / kk ** 3
+
+        # Velocity dispersion sigma_v^2 = (1/6pi^2) int dk P(k), the R -> 0 limit
+        # of CAMB's sigmaV; sets how fast the wiggle is damped away.
         self._sigv = float(np.sqrt(max(np.trapezoid(self.p_lin, self.k_lin) / (6.0 * PI ** 2), 0.0)))
 
     def _dewiggle(self, k, d2_lin):
         """Linear Delta^2 with the BAO wiggle damped by exp(-(k sigma_v)^2)."""
-        pw = np.interp(np.log(k), self._lnk, self._p_wiggle, left=0.0, right=0.0)
+        pw = np.interp(np.log(k), self._lnk_wiggle, self._p_wiggle, left=0.0, right=0.0)
         f = np.exp(-(k * self._sigv) ** 2)
         d2_w = pw * k ** 3 / (2.0 * PI ** 2) * self._d ** 2
         return d2_lin + (f - 1.0) * d2_w
@@ -388,6 +422,32 @@ class HMcode2020:
 
 
 # -- Mead (2017) growth terms -------------------------------------------
+
+def _eisenstein_hu_nowiggle(k, omega_m, omega_b, h, n_s, t_cmb=T_CMB0_DEFAULT):
+    """Eisenstein & Hu (1998) no-wiggle spectrum, **in Delta^2 units**.
+
+    Port of halofit.f90's ``Tk_nw_init`` / ``Tk_nw`` / ``Pk_nowiggle``
+    (astro-ph/9709112, equations 26 and 28-31).  The result is
+    ``k**(n_s+3) * T^2``, which is ``Delta^2 = k^3 P / (2 pi^2)`` and not ``P`` -
+    CAMB's HMcode works in Delta^2 throughout, and mixing the two conventions puts
+    a factor k^3 between the ratio's numerator and denominator.  Measured, that
+    makes ``P/P_nw`` run from 3.41 at k = 0.02 to 2.2e-4 at k = 0.5 instead of
+    hovering near 1, and the dewiggle then mistakes the whole slope for signal.
+    """
+    k = np.asarray(k, dtype=np.float64)
+    wm = omega_m * h ** 2
+    wb = omega_b * h ** 2
+    rb = omega_b / omega_m
+    s = 44.5 * np.log(9.83 / wm) / np.sqrt(1.0 + 10.0 * wb ** 0.75)
+    alpha = (1.0 - 0.328 * np.log(431.0 * wm) * rb
+             + 0.38 * np.log(22.3 * wm) * rb ** 2)
+    gamma = omega_m * h * (alpha + (1.0 - alpha) / (1.0 + (0.43 * k * s * h) ** 4))
+    q = k * (t_cmb / 2.7) ** 2 / gamma
+    big_l = np.log(2.0 * np.e + 1.8 * q)
+    big_c = 14.2 + 731.0 / (1.0 + 62.5 * q)
+    tk = big_l / (big_l + big_c * q ** 2)
+    return k ** (n_s + 3.0) * tk ** 2
+
 
 def _omega_m_z(z, omega_m):
     """``Omega_m(z)`` for a flat universe with a cosmological constant."""
