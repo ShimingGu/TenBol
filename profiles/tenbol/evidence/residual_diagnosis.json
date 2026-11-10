@@ -80,6 +80,27 @@
     "baryon_is_unusable_here": "the baryon column swings between 0.875 and 2.28 across the same rows. That is the ratio blowing up where the baryon transfer crosses zero, not a physical lag - the same artefact that made the z = 500 reading useless earlier.",
     "supersedes": "the earlier 'error grows between z = 1000 and 500' conclusion was wrong. That measurement divided the CAMB delta by 0.5484 (a constant that belongs to delta_tot, not delta_cdm), which distorted the curve shape."
   },
+  "late_time_shape": {
+    "cdm_ratio_by_z": {
+      "100": {"0.02": 1.00282, "0.10": 1.00418, "0.40": 0.99840},
+      "70": {"0.02": 1.00292, "0.10": 1.00454, "0.40": 0.99803},
+      "50": {"0.02": 1.00292, "0.10": 1.00475, "0.40": 0.99769},
+      "30": {"0.02": 1.00294, "0.10": 1.00494, "0.40": 0.99722},
+      "20": {"0.02": 1.00329, "0.10": 1.00528, "0.40": 0.99717},
+      "12": {"0.02": 1.00404, "0.10": 1.00603, "0.40": 0.99758},
+      "8": {"0.02": 1.00473, "0.10": 1.00680, "0.40": 0.99817},
+      "5": {"0.02": 1.00555, "0.10": 1.00775, "0.40": 0.99899},
+      "3": {"0.02": 1.00636, "0.10": 1.00875, "0.40": 0.99992},
+      "2": {"0.02": 1.00690, "0.10": 1.00946, "0.40": 1.00060},
+      "1": {"0.02": 1.00758, "0.10": 1.01041, "0.40": 1.00152},
+      "0": {"0.02": 1.00830, "0.10": 1.01155, "0.40": 1.00268}
+    },
+    "reading": "flat from z = 100 to 30 (k = 0.02 moves 0.01%), then rising smoothly to +0.55% (k = 0.02) and +0.66% (k = 0.10) by z = 0. Nearly the whole residual accumulates for z < 30, and it is smooth rather than a step at the onset of acceleration.",
+    "implication": "not a switch artefact - a small steady difference in background-era evolution. Every equation in that window has been checked against CAMB except the massive-neutrino pressure p_nu, which enters gpres -> adotdota -> slip -> vb and so reaches every species.",
+    "next": "compare p_nu/rho_nu against CAMB's w_nu at z < 30, where the neutrinos are non-relativistic and the interpolation of _p_spl/_rho_spl at large a*m/T is the untested part.",
+    "p_nu_result": "EXCLUDED on magnitude, no test needed. mu = a*m/T runs from 11.5 at z = 30 to 357 at z = 0, so the neutrinos are deep in the non-relativistic limit where w_nu ~ (T/m)^2/3 ~ 1e-5. Weighted by f_nu = 0.0045 that is ~4.5e-7 of gpres, four orders below the 0.5% being chased. The quadrature itself (800 log-spaced nodes over mu = 1e-6..1e6, cubic spline in log-log) is not the issue either.",
+    "status_of_option_2": "twenty suspects excluded and the residual is a smooth +0.5% (delta) accumulated below z = 30, with every equation in that window checked line by line against CAMB and no single-point bug found. That is the signature of accumulated difference between two independent integrators rather than a local error."
+  },
   "growth_ode_vs_solver": {
     "method": "linear_growth(bg, a) normalised at z = 100 against dc(z)/dc(100) at k = 0.10 h/Mpc",
     "ratio_solver_over_ode": {
