@@ -141,6 +141,7 @@ def matter_power_nl(cosmologies: CosmologyBatch, k_h, redshifts,
             + np.asarray(parts["nu_mass"])) / tot
     om_b = np.asarray(parts["b"]) / tot
     om_c = np.asarray(parts["c"]) / tot
+    om_nu = np.asarray(parts["nu_mass"]) / tot
 
     n_c = int(np.asarray(cosmologies.h).size)
     k_pivot = 0.05
@@ -151,16 +152,25 @@ def matter_power_nl(cosmologies: CosmologyBatch, k_h, redshifts,
         k_mpc = k_in * h
         a_s = float(np.asarray(cosmologies.A_s)[ci])
         n_s = float(np.asarray(cosmologies.n_s)[ci])
-        p_lin0 = ((lin.delta_m[ci, :, i0] ** 2)
-                  * (2.0 * np.pi ** 2 / k_mpc ** 3)
-                  * a_s * (k_mpc / k_pivot) ** (n_s - 1.0) * h ** 3)
-        ok = np.isfinite(p_lin0) & (p_lin0 > 0.0)
+        # HMcode's linear input is the COLD-matter spectrum, not the total one:
+        # halofit.f90 scales it by (T_cb/T_cbnu)^2 internally when neutrinos are
+        # present, and sigma_cold feeds eta, k_star, k_damp and fdamp all at
+        # once.  Handing it the total spectrum makes sigma_cold too high, and
+        # measured, that is why sum m_nu = 0.30 eV degraded to 1.40% while
+        # 0.06 eV sat near 0.9%.
+        d_cb = ((om_c[ci] * np.asarray(lin.delta_cdm[ci, :, i0])
+                 + om_b[ci] * np.asarray(lin.delta_b[ci, :, i0]))
+                / (om_c[ci] + om_b[ci]))
+        p_cb0 = ((d_cb ** 2) * (2.0 * np.pi ** 2 / k_mpc ** 3)
+                 * a_s * (k_mpc / k_pivot) ** (n_s - 1.0) * h ** 3)
+        ok = np.isfinite(p_cb0) & (p_cb0 > 0.0)
         growth = lin.growth_callable(k_index=0, cosmo_index=ci)
         for jz, zz in enumerate(z_out):
             model = HMcode2020(
                 omega_m=float(om_m[ci]), omega_b=float(om_b[ci]),
-                omega_c=float(om_c[ci]), omega_nu=0.0, h=h, n_s=n_s,
-                k_lin=k_in[ok], p_lin=p_lin0[ok], growth=growth,
+                omega_c=float(om_c[ci]), omega_nu=float(om_nu[ci]),
+                h=h, n_s=n_s,
+                k_lin=k_in[ok], p_lin=p_cb0[ok], growth=growth,
                 terms=lambda zq, b=bg: growth_terms(b, zq), z=float(zz))
             p_in = np.asarray(model.power(k_in[ok]))
             out[ci, :, jz] = np.interp(np.log(k_out), np.log(k_in[ok]), p_in)

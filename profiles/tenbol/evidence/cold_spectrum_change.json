@@ -1,0 +1,16 @@
+{
+  "change": "matter_power_nl now hands HMcode the COLD-matter spectrum (cdm+baryon weighted) instead of the total matter spectrum, and passes the real omega_nu instead of 0",
+  "why": {
+    "docstring_in_the_class": "HMcode2020.__post_init__ already says 'the linear input is the cold-matter spectrum scaled by T_cb/T_cbnu**2 when neutrinos are present', but _lnp_cold = log(p_lin) - i.e. it was being given whatever the caller passed, total matter included",
+    "camb": "halofit.f90's sig8z_cold is sigma8 of the spectrum WITHOUT neutrinos, and it feeds eta, k_star, k_damp and fdamp simultaneously (0.1281*sig8^-0.3644, 0.05618*sig8^-1.013, 0.05699*sig8^-1.089, 0.2696*sig8^0.9403)",
+    "why_it_should_matter_most_at_high_mnu": "f_nu = 0.0045 for sum m_nu = 0.06 eV but 0.023 for 0.30 eV, a factor five, and the multi-cosmology sweep found exactly that edge degrading from ~0.9% to 1.40%"
+  },
+  "verification_status": "IMPLEMENTED BUT NOT VERIFIED. The check (one linear solve at 32 k points, two HMcode builds at sum m_nu = 0.30 eV) ran for 20 minutes without finishing and was stopped. The linear solve alone is ~50 s per trajectory on this machine, so this is a cost problem rather than a failure.",
+  "what_was_measured_before_the_change": {
+    "mnu_0.30_with_total_spectrum_and_omega_nu_0": 0.01396,
+    "centre_with_same_settings": 0.00877,
+    "source": "evidence/nonlinear_multicosmo.json"
+  },
+  "what_must_happen_next": "re-run the multi-cosmology sweep with the cold-spectrum input. Until that is done, the 1.40% figure at sum m_nu = 0.30 eV stands as the last measured state and this change should be treated as unproven.",
+  "honest_note": "the code path is committed because the source evidence is unambiguous, not because it has been shown to improve anything. Do not quote an improvement for it."
+}
