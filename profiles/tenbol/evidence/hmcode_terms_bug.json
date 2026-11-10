@@ -1,0 +1,26 @@
+{
+  "bug": "HMcode2020._mead_terms() returned (1.0, 1.0) - the Einstein-de Sitter value - whenever no growth-terms provider was passed, instead of failing. Both Mead (2017) fits (dc_Mead, Dv_Mead) are written in terms of x and y, so the entire halo model silently ran in the EdS limit.",
+  "measured_cost": {
+    "with_EdS_fallback": {"max_abs_dev": 0.2842, "k_4.17": 0.7158},
+    "with_real_terms": {"max_abs_dev": 0.0109, "k_4.17": 0.9987}
+  },
+  "why_it_was_never_caught": "rg finds no importer of HMcode2020 anywhere outside hmcode.py, and power.py has no nonlinear entry point, so the class had never been executed against CAMB at all. The fallback made it produce plausible-looking numbers in the wrong cosmology.",
+  "real_term_values": "for this LCDM cosmology at z = 0 the terms are x = 0.78757, y = 0.93141, gnorm = 0.78757",
+  "fix": "_mead_terms now raises ValueError when terms is None, naming the required argument. Verified: constructing without terms raises, constructing with terms=lambda z: sigma.growth_terms(bg, z) gives 1.09%.",
+  "what_was_checked_and_found_correct_before_landing_on_this": [
+    "gst mass function: bigA = 0.21616, a = 0.707, p = 0.3 - character-for-character identical to halofit.f90:2298-2313",
+    "p1h_quad_weight trapezoid: 0.5*gst*m*(nu[i+1]-nu[i-1]) - identical to halofit.f90:1339-1344",
+    "win() NFW window: small-k expansion, the ks2>4 angle-subtraction branch, norm scaling, clipping to [0,1] - identical to halofit.f90:2256-2293",
+    "p_1h assembly: sum += weight*wk*wk, /cosmic_density, *(1-f_nu)^2 for imead 3/4, *k^3/(2pi^2), *x/(1+x) with x=(k/kstar)^4 - identical to halofit.f90:1743-1781",
+    "As = 5.196 - correct, because halofit.f90:626 sets imead_base = 3 for halofit_mead2020",
+    "eta = 0.1281*sig8z_cold^-0.3644 and kstar = 0.05618*sig8z_cold^-1.013 - match halofit.f90 for imead 3",
+    "dc_Mead and Dv_Mead coefficients p10..p43, dc0 = (3/20)(12pi)^(2/3), Dv0 = 18pi^2, the (1-0.041 f_nu) and (1+0.763 f_nu) factors - identical to halofit.f90:2849-2905"
+  ],
+  "remaining_residual": {
+    "value": 0.0109,
+    "shape": "flat: 0.9957 at k=0.093, 0.9943-0.9948 through k=2, 0.9987 at k=4.2, i.e. uniformly ~0.5% low",
+    "omega_nu_tested": "passing the real Omega_nu = 0.001437 made it worse (1.073% -> 1.223%), so the f_nu factors in dc/Dv/p_1h are not the explanation and omega_nu should stay 0 for now",
+    "next": "the flat 0.5% suggests a single normalisation, most likely sig8_cold or the sigma(R) table; compare sigma(R) against CAMB over the full radius range rather than just R = 8."
+  },
+  "state": "hmcode.py now fails loudly on missing terms; the nonlinear target is 1.09% against a 0.5% requirement, down from 28.4%"
+}

@@ -156,9 +156,21 @@ class HMcode2020:
 
     # -- parameter fits --------------------------------------------------
     def _mead_terms(self):
-        """Growth terms ``(x, y)``; EdS (1, 1) if no provider was supplied."""
+        """Growth terms ``(x, y)`` for Mead (2017) ``dc_Mead`` / ``Dv_Mead``.
+
+        These are **not** optional: for LCDM at z = 0 they are (0.788, 0.931),
+        nowhere near 1, and both fits are written in terms of them.  Returning
+        (1, 1) - the Einstein-de Sitter value - silently runs the whole halo model
+        in the wrong cosmology and costs 28% of the nonlinear power at high k
+        (measured: max |dev| 28.4% with the fallback against 1.1% with the real
+        terms).  So fail loudly instead.
+        """
         if self.terms is None:
-            return 1.0, 1.0
+            raise ValueError(
+                "HMcode2020 needs growth terms: pass terms=lambda z: "
+                "sigma.growth_terms(bg, z). Without them Mead's dc/Dv fits run in "
+                "the EdS limit and the high-k nonlinear power is 28% low."
+            )
         x, y = self.terms(self.z)[:2]
         return float(x), float(y)
 
