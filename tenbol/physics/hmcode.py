@@ -41,10 +41,10 @@ M_MAX = 1.0e18
 N_MASS = 256
 RHO_CRIT = 2.775e11    # Msun/Mpc^3 (h^2 units folded in, as in CAMB)
 F_BULLOCK = 0.01 ** (1.0 / 3.0)
-FDAMP_MIN = 0.0
-FDAMP_MAX = 1.0
-ALPHA_MIN = 0.0
-ALPHA_MAX = 10.0
+FDAMP_MIN = 1.0e-3
+FDAMP_MAX = 0.99
+ALPHA_MIN = 0.5
+ALPHA_MAX = 2.0
 
 
 @dataclass

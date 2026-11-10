@@ -1,0 +1,28 @@
+{
+  "question": "where does the remaining 1.09% live: the 1-halo or the 2-halo term?",
+  "localisation": {
+    "method": "the two terms dominate in different k ranges, so the ratio shape separates them",
+    "k_4.171_1halo_dominated": 0.99856,
+    "k_2.021_2halo_dominated": 0.99474,
+    "k_0.979_2halo_dominated": 0.99463,
+    "k_0.474_2halo_dominated": 0.99437,
+    "k_0.093_2halo_dominated": 0.99568,
+    "conclusion": "the 1-halo term is correct to 0.14%; the 2-halo term is ~0.56% low. The residual is in the two-halo piece."
+  },
+  "ruled_out_this_round": {
+    "k_range_truncation": "feeding the linear spectrum up to 5, 10 and 20 h/Mpc gives max|dev| 0.00974 / 0.00958 / 0.00960 - sigma(R)'s high-k tail is not being starved",
+    "sigma8_cold": "ours 0.809973 against CAMB 0.8099756, a 3e-6 difference; sigma(R) is smooth from R = 1 (2.444764) to R = 16 (0.477381)",
+    "alpha_fdamp_clamps": "CAMB clamps alpha to [0.5, 2.0] and fdamp to [1e-3, 0.99] (halofit.f90:181-184) where we used [0, 10] and [0, 1]. The bounds are now copied from CAMB, but the actual values are alpha = 0.72714 and fdamp = 0.22119, both comfortably inside, so the clamps never fire and max|dev| stayed at 0.01073. A correctness fix, not the cause.",
+    "ndamp": "halofit.f90:1720 has ndamp = 2.85, matching our exponent",
+    "fdamp_kdamp_formulas": "0.2696*sig8z_cold^0.9403 and 0.05699*sig8z_cold^-1.089 (halofit.f90:1250, 879) both reproduce to 0.02%",
+    "dewiggle_structure": "ours is d2_lin + (f-1)*d2_wiggle with f = exp(-(k*sigv)^2), structurally the same as halofit.f90:1798-1799"
+  },
+  "the_remaining_lead": {
+    "what": "how the wiggle is isolated",
+    "camb": "calculate_psmooth (halofit.f90:1853-1873) divides by the Eisenstein & Hu no-wiggle spectrum first, smooths that ratio with a Gaussian of width wiggle_sigma = 0.25 in log k, then multiplies the no-wiggle spectrum back",
+    "ours": "_build_wiggle smooths log P directly, and its own docstring says so: 'smoothing log P directly over the same width gives the same broadband component to the accuracy that matters here, and avoids porting the Eisenstein & Hu no-wiggle fit'",
+    "why_it_matters": "P carries a slope near k^-3. Smoothing log P convolves that slope into the broadband estimate, whereas normalising by a no-wiggle spectrum first flattens the ratio so the Gaussian touches only the wiggles. The difference is of the order of the 0.5% being chased, and it lands exactly on the 2-halo term.",
+    "fix": "port calculate_nowiggle (Eisenstein & Hu 1998 no-wiggle, with CAMB's own knorm normalisation) and use it the way calculate_psmooth does"
+  },
+  "state": "nonlinear max|dev| = 1.09% against a 0.5% requirement, down from 28.4%; the residual is localised to the two-halo dewiggle"
+}
