@@ -1,0 +1,22 @@
+{
+  "question": "is the 27.5% nonlinear gap caused by our linear spectrum, or is it inside HMcode?",
+  "test": "feed HMcode2020 CAMB's OWN linear spectrum (interpolated onto the same k grid) instead of ours, with the solver-based growth callable, and compare against CAMB pk_nlin at z = 0",
+  "result_with_camb_linear_input": {
+    "k_0.093": 0.9925,
+    "k_0.474": 0.9574,
+    "k_0.979": 0.8853,
+    "k_2.021": 0.7754,
+    "k_4.171": 0.7158,
+    "min": 0.7158,
+    "max": 1.0000,
+    "max_abs_dev": 0.2842
+  },
+  "result_with_our_linear_input": {
+    "note": "measured earlier in nonlinear_first_measurement.json",
+    "k_2.903": 0.7457,
+    "max_abs_dev": 0.2751
+  },
+  "conclusion": "the gap is essentially identical with CAMB's own linear input (28.4% vs 27.5%), so our linear spectrum is not the cause at all - the error is entirely inside HMcode. That also means the linear and nonlinear problems are independent: fixing the linear BAO peak would not have moved this number, and vice versa.",
+  "shape": "the ratio is 1.000 at low k and falls monotonically to 0.716 at k = 4.2. Since the 1-halo term dominates at high k, a shortfall that grows with k and saturates near 0.7 points at the 1-halo amplitude (mass function normalisation, or the |u(k|M)|^2 window integration) rather than at the 2-halo term, which is anchored to the linear spectrum and is correct by construction at low k.",
+  "next": "compare _p_1h in hmcode.py against halofit.f90's one-halo integral term by term, starting with the mass function dn/dM normalisation and the Fourier window normalisation."
+}

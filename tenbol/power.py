@@ -78,7 +78,16 @@ class PowerResult:
         d = d / d[-1]
 
         def growth(a_query) -> np.ndarray:
-            return np.interp(np.atleast_1d(np.asarray(a_query, dtype=np.float64)), a, d)
+            aq = np.atleast_1d(np.asarray(a_query, dtype=np.float64))
+            out = np.interp(aq, a, d)
+            # Below the tabulated range, continue the matter-era growing mode
+            # (D proportional to a) instead of clamping. HMcode inverts a cubic
+            # spline of D(a) over a = 1e-3..1, so a flat segment there violates
+            # the strictly-increasing requirement and raises inside CubicSpline.
+            lo = aq < a[0]
+            if np.any(lo):
+                out = np.where(lo, d[0] * aq / a[0], out)
+            return out
 
         return growth
 
