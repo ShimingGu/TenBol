@@ -1,0 +1,26 @@
+{
+  "what": "first time HMcode-2020 has ever been run against CAMB in this repo. rg finds no importer of HMcode2020 outside hmcode.py itself, and power.py has no nonlinear entry point at all - only matter_power (linear delta), growth and the cache helpers.",
+  "setup": {
+    "inputs": "our own linear P(k) at z = 0 from the perturbation solver, k = 1e-3..5 h/Mpc",
+    "model": "HMcode2020(omega_m = 0.3170, omega_b = 0.0499, omega_c = 0.2673, omega_nu = 0, h = 0.67, n_s = 0.965, growth = linear_growth, z = 0)",
+    "reference": "CAMB 2.0.5 pk_nlin at z = 0, halo model mead2020, pinned ReferenceSettings"
+  },
+  "ratios": {
+    "k_0.001": {"nl": 0.9985, "lin": 0.9985},
+    "k_0.0021": {"nl": 0.9963, "lin": 0.9963},
+    "k_0.0043": {"nl": 0.9916, "lin": 0.9916},
+    "k_0.0088": {"nl": 0.9959, "lin": 0.9959},
+    "k_0.0182": {"nl": 1.0093, "lin": 1.0097},
+    "k_0.0375": {"nl": 1.0197, "lin": 1.0209},
+    "k_0.0774": {"nl": 0.9910, "lin": 0.9938},
+    "k_0.1598": {"nl": 0.9962, "lin": 1.0180},
+    "k_0.3299": {"nl": 0.9807, "lin": 1.0018},
+    "k_0.6812": {"nl": 0.9396, "lin": 1.0077},
+    "k_1.4062": {"nl": 0.8382, "lin": 1.0067},
+    "k_2.9031": {"nl": 0.7457, "lin": 1.0058}
+  },
+  "summary": "nonlinear ratio spans 0.7249..1.0197, mean 0.9503, max |dev| = 27.5%",
+  "reading": "below k ~ 0.08 the nonlinear ratio simply tracks the linear one (0.99..1.02), so the low-k amplitude is fine. Above that it falls monotonically to 0.746 at k = 2.9 h/Mpc: the model under-produces the nonlinear enhancement by up to 25%. That is not a refinement gap, the halo-model terms are wrong or badly off in normalisation.",
+  "verdict": "the nonlinear acceptance target (0.5% max deviation) has never been met and is not close. It is a new work item, not a polish step. The linear spectrum it is fed (median +0.17%, BAO peak +2.5%) is not the limiting factor at high k - a 2% input cannot produce a 25% output deficit.",
+  "context_for_the_task_list": "M1e says 'validate nonlinear P vs CAMB on tuning set' and M2a/M3 build on it (16/32/128 accuracy suite, performance comparison). None of those could have happened: there is no nonlinear pipeline to run them on."
+}
