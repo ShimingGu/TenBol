@@ -39,7 +39,8 @@
     "tight_coupling_threshold": "tc_epsilon 0.10 / 0.05 / 0.02 gives peaks 1.0210 / 1.0216 / 1.0220 and means 1.0097 / 1.0099 / 1.0100, so the tight-coupling approximation has converged and is not the bottleneck",
     "pig_second_order_tc": "CAMB equations.f90:2509-2510 and perturbations.py:437-439 agree term for term, including the (1 + dopacity*11/6/opacity^2) factor and the (-11/6) on the sigmadot term",
     "dgq_assembly": "CAMB equations.f90:2351,2411 build dgq = grhob*vb + grhog*qg + grhor*qr; ours is the same with the tight-coupling approximants, which the tc_epsilon scan above shows are converged",
-    "photon_rsa_threshold": "rsa_ktau 15 / 30 / 60 / 120 changes the ratios by at most 0.0011 at every k in 0.02..0.40 h/Mpc, so the switch point is not the source - even though for k = 0.02 h/Mpc it fires at z ~ 100, exactly where the error starts to grow"
+    "photon_rsa_threshold": "rsa_ktau 15 / 30 / 60 / 120 changes the ratios by at most 0.0011 at every k in 0.02..0.40 h/Mpc, so the switch point is not the source - even though for k = 0.02 h/Mpc it fires at z ~ 100, exactly where the error starts to grow",
+    "baryon_sound_speed": "UNCONFIRMED, not counted. cs2 multiplied by 1.00 / 1.01 / 0.99 / 0.97 gave bit-identical ratios at every peak and trough. Four identical answers for a 3% parameter change is far more likely to mean pb._cs2_tab is not what rhs actually reads than that cs2 is perfectly irrelevant, so this test needs a direct check before it excludes anything."
   },
   "transfer_convention_settled": {
     "method": "invert CAMB's own pk_lin for T(k) via P = T^2*2*pi^2*k*P_R with k in 1/Mpc, then compare T against transfer['delta_tot']. No tenbol code involved, so this cannot be an artefact of our solver.",
