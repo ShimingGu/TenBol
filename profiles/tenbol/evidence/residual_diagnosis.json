@@ -65,6 +65,21 @@
     "consequence_for_the_low_k_result": "sigma8 agrees to 4e-6 while the solver reads +1% at z = 0, and those two are computed by different code paths - sigma.py integrates its own growth ODE. So the growth ODE is right and the perturbation solver drifts late; comparing the two directly is the sharpest next test.",
     "transfer_note": "delta_cdm = delta/k_Mpc^2 with no extra constant (dc = delta_cdm*kM^2 reproduced exactly); only delta_tot carries the 0.5484 factor. That is why the component comparison was off by 1.8235."
   },
+  "where_the_error_grows": {
+    "method": "delta against CAMB at fixed k across z, using delta_cdm = delta/k_Mpc^2 with NO extra constant (verified: dc/(delta_cdm*kM^2) lands at 1.000-1.008)",
+    "cdm_ratio": {
+      "z_1000": {"0.02": 1.0000, "0.10": 1.0000, "0.40": 1.0000},
+      "z_900": {"0.02": 1.0000, "0.10": 1.0000, "0.40": 1.0000},
+      "z_700": {"0.02": 1.0000, "0.10": 1.0003, "0.40": 1.0000},
+      "z_500": {"0.02": 0.9999, "0.10": 1.0010, "0.40": 0.9998},
+      "z_300": {"0.02": 1.0004, "0.10": 1.0023, "0.40": 0.9995},
+      "z_100": {"0.02": 1.0028, "0.10": 1.0042, "0.40": 0.9984},
+      "z_0": {"0.02": 1.0083, "0.10": 1.0115, "0.40": 1.0027}
+    },
+    "conclusion": "the CDM ratio is flat at 1.0000 through z = 1000..700, only 1.001-1.002 by z = 300..500, and reaches 1.008-1.012 at z = 0. So the error accumulates in the LATE universe (z < 100), not around recombination.",
+    "baryon_is_unusable_here": "the baryon column swings between 0.875 and 2.28 across the same rows. That is the ratio blowing up where the baryon transfer crosses zero, not a physical lag - the same artefact that made the z = 500 reading useless earlier.",
+    "supersedes": "the earlier 'error grows between z = 1000 and 500' conclusion was wrong. That measurement divided the CAMB delta by 0.5484 (a constant that belongs to delta_tot, not delta_cdm), which distorted the curve shape."
+  },
   "growth_ode_vs_solver": {
     "method": "linear_growth(bg, a) normalised at z = 100 against dc(z)/dc(100) at k = 0.10 h/Mpc",
     "ratio_solver_over_ode": {
