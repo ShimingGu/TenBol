@@ -59,6 +59,17 @@
     "consequence_for_the_low_k_result": "sigma8 agrees to 4e-6 while the solver reads +1% at z = 0, and those two are computed by different code paths - sigma.py integrates its own growth ODE. So the growth ODE is right and the perturbation solver drifts late; comparing the two directly is the sharpest next test.",
     "transfer_note": "delta_cdm = delta/k_Mpc^2 with no extra constant (dc = delta_cdm*kM^2 reproduced exactly); only delta_tot carries the 0.5484 factor. That is why the component comparison was off by 1.8235."
   },
+  "growth_ode_vs_solver": {
+    "method": "linear_growth(bg, a) normalised at z = 100 against dc(z)/dc(100) at k = 0.10 h/Mpc",
+    "ratio_solver_over_ode": {
+      "z_0": 0.926493, "z_10": 0.933778, "z_30": 0.949155, "z_50": 0.964899,
+      "z_100": 1.0, "z_200": 1.060191, "z_300": 1.111959,
+      "z_500": 1.198610, "z_800": 1.301090, "z_1000": 1.357429
+    },
+    "reading": "below z ~ 200, where the ODE's matter-era initial condition is valid, the two independent paths differ by up to 7.4% (z = 0), and the perturbation solver is the one that agrees with CAMB to ~1% (see where_the_error_grows). So linear_growth carries a systematic offset of that order. Above z ~ 200 the ODE is extrapolating outside its validity range (a_start = 3e-2) and the comparison means nothing.",
+    "impact": "HMcode reads this growth normalisation directly as its x term, so a 7% offset here propagates into the nonlinear P_NL. That makes m1e's 'validated' status unsafe even though no linear comparison flagged it.",
+    "next": "settle which of the two is right by comparing both against CAMB's own growth factor over 0 < z < 100, then fix linear_growth or the solver accordingly. Do not trust the HMcode normalisation until this closes."
+  },
   "residual_shape": "not a flat plateau: k=0.3 reads +1.60%, k=1.05 +0.70%, k=5.0 +0.51%, so it falls with k; combined with the z dependence (+0.76% at z=0 down to +0.34% at z=2) it is a late-time growth offset that the acoustic region modulates.",
   "what_that_leaves": "a genuine error shared by every component: +0.86% at k >= 0.3 h/Mpc at z = 0, easing to +0.34% at z = 2. The remaining suspects are the shared evolution terms (etak, h, slip) and the initial conditions - not the neutrino sector, not the reference, not the integrator.",
   "still_open": {
