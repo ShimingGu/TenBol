@@ -77,7 +77,14 @@
       "correction_of_the_7pct_figure": "the earlier 7.4% was a comparison error on my side: it normalised at z = 1000 (outside the ODE's validity) and compared dc, the CDM component, against an ODE for total matter. Against CAMB's delta_tot and using dm, the honest gap is the ~2% in this table.",
       "impact": "HMcode reads this growth normalisation as its x term, so the ~2% is a real input error for P_NL; m1e's validated status does not survive it"
     },
-    "next": "fix linear_growth against CAMB's delta_tot over 0 < z < 500, then rerun whatever HMcode consumes its normalisation for. The solver itself does not need changing on this evidence."
+    "next": "fix linear_growth against CAMB's delta_tot over 0 < z < 500, then rerun whatever HMcode consumes its normalisation for. The solver itself does not need changing on this evidence.",
+    "diagnosis_of_linear_growth": {
+      "neutrino_free_streaming": "not the cause: with m_nu = 1e-4 eV the ODE still reads +1.043% at z = 0 (against +1.863% for 0.06 eV), so only 0.8pp of the gap is neutrinos",
+      "a_start": "not the cause either: a_start 3e-2 / 5e-2 / 1e-1 / 2e-1 gives z = 0 deviations of +1.043 / +1.177 / +1.346 / +1.987% while z = 30..500 stays bit-identical at +0.886 / +0.607 / 0 / -0.799 / -1.029 / +0.364. Raising a_start only moves the region below a_start, which is then linear D ~ a extrapolation, so those numbers are contamination.",
+      "residual_shape": "the deviation changes sign around z ~ 150 and reaches +-1% on both sides, which is a shape error in D(a), not a normalisation offset",
+      "conclusion": "a single-fluid D cannot reproduce CAMB's delta_tot at the 1% level - the ODE omits the radiation's gravitational contribution and the relative velocities between components. This is method error, not a bug to tune away.",
+      "options": "either extend the ODE to a radiation+matter two-fluid system, or take the growth normalisation from the perturbation solver's dm, which agrees with CAMB to 0.3%"
+    }
   },
   "residual_shape": "not a flat plateau: k=0.3 reads +1.60%, k=1.05 +0.70%, k=5.0 +0.51%, so it falls with k; combined with the z dependence (+0.76% at z=0 down to +0.34% at z=2) it is a late-time growth offset that the acoustic region modulates.",
   "what_that_leaves": "a genuine error shared by every component: +0.86% at k >= 0.3 h/Mpc at z = 0, easing to +0.34% at z = 2. The remaining suspects are the shared evolution terms (etak, h, slip) and the initial conditions - not the neutrino sector, not the reference, not the integrator.",
