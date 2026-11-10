@@ -101,6 +101,13 @@
     "p_nu_result": "EXCLUDED on magnitude, no test needed. mu = a*m/T runs from 11.5 at z = 30 to 357 at z = 0, so the neutrinos are deep in the non-relativistic limit where w_nu ~ (T/m)^2/3 ~ 1e-5. Weighted by f_nu = 0.0045 that is ~4.5e-7 of gpres, four orders below the 0.5% being chased. The quadrature itself (800 log-spaced nodes over mu = 1e-6..1e6, cubic spline in log-log) is not the issue either.",
     "status_of_option_2": "twenty suspects excluded and the residual is a smooth +0.5% (delta) accumulated below z = 30, with every equation in that window checked line by line against CAMB and no single-point bug found. That is the signature of accumulated difference between two independent integrators rather than a local error."
   },
+  "option_1_is_pointless": {
+    "test": "temporary probe: shrink the step 10x and 100x for a > 0.03 (z < 32) only, leaving the rest of the run untouched",
+    "baseline": "1.00830 1.01155 1.00268 at k = 0.02 / 0.10 / 0.40, 9907 steps",
+    "x10": "1.00830 1.01155 1.00268, 16216 steps",
+    "verdict": "bit-identical. The +0.5% that accumulates below z = 30 is not truncation error, so an error-controlled adaptive integrator would reproduce it exactly while costing more per step. Option 1 - switching to adaptive RK - should not be built: it buys no accuracy here and it would break the fixed-schedule batching that the tensor layout depends on.",
+    "probe_reverted": "the late_a / late_dlna_scale fields were removed again; nothing about the solver changed"
+  },
   "growth_ode_vs_solver": {
     "method": "linear_growth(bg, a) normalised at z = 100 against dc(z)/dc(100) at k = 0.10 h/Mpc",
     "ratio_solver_over_ode": {
