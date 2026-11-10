@@ -1,0 +1,27 @@
+{
+  "attempt": "replace the single-fluid growth ODE with a matter+radiation two-fluid system",
+  "motivation": "linear_growth reads +1.86% at z = 0 against CAMB delta_tot while the perturbation solver reads +0.28%, so the single-fluid ODE is the worse of the two. The hypothesis was that radiation's missing gravitational contribution is the difference.",
+  "pre_checks_that_ruled_out_the_obvious": {
+    "_omega_m": "agrees with the closed-form Omega_m(a) to 1e-16 at z = 0, 1, 5, 30, 100 for both m_nu = 0.06 and 1e-4 eV",
+    "a_start": "moving it from 3e-2 to 2e-1 leaves z = 30..500 bit-identical; only the region below a_start moves, and that is D ~ a extrapolation"
+  },
+  "the_model_tried": "D_m'' + (2+dlnh)D_m' = 1.5(Om D_m + Or D_r); D_r'' + (2+dlnh)D_r' = 2(Om D_m + Or D_r), the 4/3 factor coming from delta_p = delta_rho/3; superhorizon adiabatic initial condition D_m = D_r = 1 with zero derivative, a_start = 1e-5",
+  "result": {
+    "z_0": {"single": 1.01862, "two_fluid": 1.03920},
+    "z_10": {"single": 1.01537, "two_fluid": 1.03266},
+    "z_30": {"single": 1.01167, "two_fluid": 1.02377},
+    "z_50": {"single": 1.00767, "two_fluid": 1.01623},
+    "z_100": {"single": 1.0, "two_fluid": 1.0},
+    "z_200": {"single": 0.99069, "two_fluid": 0.97465},
+    "z_300": {"single": 0.98786, "two_fluid": 0.95691},
+    "z_500": {"single": 1.00121, "two_fluid": 0.94218},
+    "max_abs_dev_single": 0.018619,
+    "max_abs_dev_two_fluid": 0.057825
+  },
+  "verdict": "worse, by 3x. The deficit at z = 500 (6%) says it goes wrong during the radiation era, which is where the model is supposed to help. So the naive two-fluid form is not what CAMB integrates: in synchronous gauge the radiation density perturbation is coupled to its own anisotropic stress and to the metric, not just to a 4/3-scaled source term. Adding one coefficient is not enough.",
+  "status": "reverted; linear_growth is unchanged and the suite is green",
+  "what_would_actually_work": [
+    "feed HMcode the solver's own growth instead of the ODE - PowerResult.growth() already returns delta(z)/delta(z_ref) and the solver agrees with CAMB to 0.28%",
+    "or derive the two-fluid equations properly, including the photon anisotropic stress and the metric terms, which is a real port rather than a coefficient fix"
+  ]
+}
