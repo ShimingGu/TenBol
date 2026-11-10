@@ -1,0 +1,14 @@
+{
+  "attempt": "replace the log-P Gaussian smoothing in _build_wiggle with CAMB's calculate_psmooth recipe (divide by an Eisenstein & Hu no-wiggle spectrum, smooth that ratio, multiply back)",
+  "motivation": "the residual was localised to the two-halo term (1-halo correct to 0.14% at k=4.17, two-halo low by 0.56% at k=0.5-2), and the dewiggle is the only shape-carrying factor there. _build_wiggle's own docstring admitted it smoothed log P directly and skipped the no-wiggle fit.",
+  "implemented": "port of halofit.f90 Tk_nw_init / Tk_nw / Pk_nowiggle (equations 26 and 28-31 of astro-ph/9709112), normalised to the linear spectrum at knorm = 0.03, on CAMB's own wiggle grid (kmin 5e-3, kmax 5 h/Mpc, 512 uniform steps in log k), with CAMB's edge rule of leaving points within 3 sigma of either end unsmoothed",
+  "result": {
+    "48_point_input": {"max_abs_dev": 0.19403, "k_0.474": 1.15045},
+    "camb_16384_point_input": {"max_abs_dev": 0.18780, "k_0.474": 1.14208},
+    "previous_log_P_version": {"max_abs_dev": 0.01073, "k_0.474": 0.99437}
+  },
+  "what_that_rules_out": "it is not a sampling artefact: the dense CAMB grid gives 18.8% against 19.4% for a 48-point grid, so the difference is in the model, not the input spacing",
+  "diagnosis": "the ratios come out ABOVE 1 (1.08, 1.15, 1.08, 1.04) where the previous version sat just below. _dewiggle computes d2_lin + (f-1)*d2_wiggle with f < 1, so it subtracts d2_wiggle; getting more power than CAMB means the new d2_wiggle is negative where CAMB's is positive, i.e. the extracted wiggle has the wrong sign or the wrong broadband split. Most likely the E&H normalisation leaves a residual slope in the ratio, which the 0.25-wide Gaussian then treats as signal.",
+  "status": "reverted. hmcode.py is back at the committed state: terms hard-fail, CAMB clamp bounds, log-P dewiggle, nonlinear max|dev| = 1.09%",
+  "consequence_for_the_residual": "the two-halo 0.56% is still unexplained. Either the dewiggle needs a correct no-wiggle split (not the naive one tried here), or the residual sits in the fdamp/k_damp normalisation after all, or the 1-halo and 2-halo descriptions each carry a small bias that partially cancels."
+}
