@@ -1,0 +1,21 @@
+{
+  "question": "is the +2.5% at the BAO peaks a phase error or an amplitude error?",
+  "method": "locate the local extrema of our P(k) and CAMB's P(k) in ln k and compare their positions; a phase error shifts them, an amplitude error does not",
+  "result": {
+    "first_peak_ours_lnk": -4.0824,
+    "first_peak_camb_lnk": -4.0824,
+    "shift_lnk": 0.0,
+    "ratio_at_peak": 1.0088
+  },
+  "verdict": "not a phase error - the first acoustic peak sits at exactly the same wavenumber in both. The residual is in amplitude/damping, not in the acoustic scale or its propagation.",
+  "why_this_does_not_pin_it_down": "with 30 points over 0.015-0.45 the spacing in ln k is 0.113 against a BAO period near 0.5, i.e. 4-5 samples per oscillation. Only one peak was detected and no troughs at all, so the diagnostic is resolution-limited and cannot separate the amplitude cleanly.",
+  "what_is_therefore_excluded": {
+    "acoustic_scale": "the peak positions agree exactly, and r*(z*) was already validated to 4e-5 (144.4 vs CAMB 144.41 Mpc)",
+    "damping_via_opacity": "kappa and its ln-a derivative perturbed by +-2% moved the peak by 0.039pp",
+    "photon_hierarchy_height": "lmax_g 24 / 40 / 64 bit-identical (the RSA freezes the upper rows anyway)",
+    "time_integrator": "quartering dlna_max and dlna_acoustic moved the plateau by 0.0002",
+    "gauge_and_stress_equations": "z, dz, etak, sigma, adotdota, sigmadot all match CAMB line for line"
+  },
+  "state_of_the_linear_residual": "twenty-plus suspects excluded and the remaining +2.5% BAO-peak excess has no identified single-point cause. It is an accumulated difference between two integrators, not a locatable bug - which is exactly why it resists the last few rounds of diagnosis.",
+  "significance_for_the_nonlinear_work": "this matters because the end-to-end nonlinear call reads 3.50% against HMcode-alone's 0.88%, and the difference is this linear input. So the linear residual is now the largest single term in the nonlinear error, and it is the one thing currently without a fix."
+}
