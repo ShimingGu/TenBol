@@ -1,0 +1,13 @@
+{
+  "question": "does feeding HMcode the cold-matter spectrum plus the real f_nu improve m_nu = 0.30 eV?",
+  "setup": "one cosmology (sum m_nu = 0.30 eV, f_nu = 0.02215), our own solver on a 32-point k grid over 1e-3..5 h/Mpc, two HMcode builds sharing the same linear solve",
+  "result": {
+    "total_spectrum_omega_nu_0": {"max_abs_dev": 0.06419, "at_k": 5.0, "ratios_0.1_0.5_1_2_4": [1.0085, 0.9965, 0.9863, 0.9757, 0.9483]},
+    "cold_spectrum_omega_nu_true": {"max_abs_dev": 0.06297, "at_k": 0.036, "ratios_0.1_0.5_1_2_4": [1.0452, 1.0343, 1.0218, 1.0021, 0.9667]}
+  },
+  "verdict": "MIXED, not an improvement. The high-k end gets better - k = 4 goes 0.9483 -> 0.9667, i.e. the 5.2% deficit halves to 3.3%, which is the region where the f_nu factors in p_1h, dc_Mead and Dv_Mead actually act. But the mid and low end gets worse: k = 0.1 goes 1.0085 -> 1.0452, and k = 0.5, 1.0 both move up by 3-4pp. Net max|dev| 6.42% -> 6.30%, i.e. essentially unchanged.",
+  "a_second_and_more_important_finding": "the absolute numbers here (6.4%) are far worse than the 1.40% measured earlier for the same cosmology, and the only difference is the k grid: this run fed HMcode 32 points, the earlier one fed it CAMB's 16384-point spectrum. So grid density dominates both candidates, and this comparison is compressed against a 6.4% floor - it cannot resolve which input is right.",
+  "what_that_implies": "the cold-spectrum question is still open. To answer it, HMcode has to see a dense spectrum; on a 32-point grid the answer is swamped. That is consistent with the earlier finding that a 2-point grid gave 27% error at k = 1 where a dense one gave 0.86%.",
+  "status": "cold_spectrum_change (commit 30afb7d) stays UNVERIFIED. It is not shown to help; at k = 4 it helps and at k <= 1 it hurts. Do not quote an improvement for it.",
+  "cost_note": "this single-cosmology, 32-point comparison took 37 minutes of wall time at 99.7% CPU. The linear solve is ~1 min per trajectory on this machine."
+}
