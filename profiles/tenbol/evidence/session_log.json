@@ -1,100 +1,330 @@
 {
-  "fixed_and_committed": [
-    {"id": 1, "what": "RSA threshold was constant 30; CAMB uses max(15, k*taurend)", "evidence": "k=0.67 h/Mpc diverged 2.5e148 before, finite after"},
-    {"id": 2, "what": "inv_tau used remaining conformal time 1/(tau0-tau); CAMB cothxor = 1/tau (accumulated)"},
-    {"id": 3, "what": "angular CFL keyed on k*tau<30 (super-horizon) instead of free-hierarchy regime", "evidence": "polarization reached 1.9e6; k=1 h/Mpc diverged, fixed"},
-    {"id": 4, "what": "massive-neutrino hierarchy never initialised (Fnu block stayed at allocate() zeros, clxnu=qnu=0)"},
-    {"id": 5, "what": "neutrino freeze switch used k*tau_rem, so every k froze on step 1; changed to k*tau"},
-    {"id": 6, "what": "fg(2)/fr(2) row lookup off-by-one into the scalar block (l=3 photon eq driven by etak)"},
-    {"id": 7, "what": "second-order tight coupling was missing; CAMB hard-codes second_order_tightcoupling=.true."}
-  ],
-  "units_pinned_from_camb_source": {
-    "file": "results.f90:3538 Transfer_GetUnsplinedPower",
-    "fact": "P(k) = T^2 * 2pi^2 * k * P_R(k), with k in 1/Mpc; i.e. T = delta/k^2",
-    "correct_assembly": "P_ours = delta_m^2 * (2pi^2/k_Mpc^3) * A_s*(k_Mpc/kp)^(ns-1) * h^3, k_Mpc = k_hMpc*h",
-    "warning": "never use dm^2/k^3 as a metric: our dm is delta (k^2 at low k) while CAMB delta_tot is delta/k^2 (flat)"
+  "project": "Tenbol - GPU/tensor-native Einstein-Boltzmann framework reproducing CAMB-2.0.5 mead2020 nonlinear matter power",
+  "session_date": "2026-11-11",
+  "repo": "/scratch/Tenbol, branch main",
+
+  "acceptance_criteria": {
+    "reference": "CAMB 2.0.5, halofit_version='mead2020'",
+    "nonlinear_accuracy": "<= 0.5% per backend",
+    "batch_sizes": [16, 32, 128],
+    "speed": "2x faster than tuned parallel CPU",
+    "platforms": "CUDA and MPS first-class; no Apple hardware so MPS can only be 'implementable', never hardware-verified",
+    "forbidden": [
+      "wrapping CAMB/CLASS perturbation evolution",
+      "hiding reference output",
+      "undeclared fitting",
+      "narrowing the physics domain or loosening thresholds",
+      "silently reusing verified subroutines without declaring and costing them"
+    ],
+    "code_rules": "Python or Fortran only; backend kernels generated from Python; no parallel C++/CUDA/shader physics tree; no scattered bash scripts; pre-commit; no hardcoded dev paths"
   },
-  "current_linear_accuracy": {
-    "measured": "z=0, k=1e-4..3 h/Mpc, absolute (no free normalisation)",
-    "raw_ratio": "0.9768 .. 1.0359, median 1.0103",
-    "deviation": "-2.3% .. +3.6%, median +1.0%",
-    "middle_band_2e-4_to_0.01": "0.04% .. 0.5%",
-    "plateau": "flat +3.5% above k=0.28 h/Mpc",
-    "target": "0.5%"
+
+  "current_accuracy_state": {
+    "linear_median_deviation": 0.0017,
+    "linear_k_2e-4_to_1e-3": 0.0006,
+    "linear_bao_peak_top": 0.025,
+    "linear_note": "BAO peak POSITION agrees exactly (ln k = -4.0824 both); the 2.5% is amplitude at the peak, not a phase error. 20+ suspects eliminated.",
+    "hmcode_alone_dense_grid": 0.0088,
+    "hmcode_multicosmo_range": [0.0048, 0.0088],
+    "hmcode_worst_case_mnu_030": 0.0140,
+    "end_to_end_matter_power_nl": 0.0350,
+    "end_to_end_breakdown": "HMcode contributes 0.88pp, our linear spectrum contributes ~2.6pp",
+    "target_met": false,
+    "target": 0.005
   },
-  "neutrino_lmax_attempts_all_failed": [
-    {"attempt": "zero dFnu for l>=4 only", "result": "diverged a=9.36e-2", "why": "F4 frozen at a large value kept driving F3"},
-    {"attempt": "l=4 truncation term, zero l>4", "result": "diverged a=3.29e-2, k=0.91/Mpc", "why": "mid-run switch leaves discarded moments non-zero"},
-    {"attempt": "static per-k bucket (lmax from k*tau_end, no switching)", "result": "diverged a=3.42e-3, |Fnu|=1e83 at a=3.2e-4", "why": "top truncation kb*vT*F3 - 5*F4*inv_tau has damping rate 5/tau ~ 0.042 at tau~120, far below the drive; sink insufficient"}
-  ],
-  "camb_facts_learned": {
-    "accurate_massive_neutrinos_default": ".false. (model.f90:29, camb.f90:687) so high_ktau really uses lmaxnu_tau=4",
-    "tau_switch_ktau": "max(20, lmaxnr-4)/k",
-    "lmaxnu_tau_formula": "high_ktau ? 4 : clip(nint(0.8*q*tau_nu_nonrel), 3, lmaxnu)  (equations.f90:669-680)",
-    "second_order_tightcoupling": "compile-time .true. (equations.f90:52)",
-    "delta_p_b": "barssc0*(1-0.75*Yhe+(1-Yhe)*opacity*a2/akthom)*Tmat*(clxb+Delta_TM)"
+
+  "verified_speedup": {
+    "measurement": "single trajectory, n_steps constant at 8751",
+    "before_seconds": 49.16,
+    "after_seconds": 29.75,
+    "factor": 1.65,
+    "physics_change": "dm moved 2e-13 absolute (2e-17 relative), floating-point ordering only",
+    "what_this_is_not": "NOT a comparison against CAMB. No CPU baseline vs CAMB exists (M3 baseline_cpu.py deadlocks under multiprocessing+CAMB)."
   },
-  "next_two_options": {
-    "option_A_camb_operator_split": "in evolve()'s step limiter add stiffness bound for the Fnu block: lim = min(lim, stiff_factor/((lmax+1)*inv_tau))",
-    "option_B_explicit_damping": "replace -(l+1)*F*inv_tau with -(l+1)*F*(inv_tau + Gamma), Gamma sized to dominate kb*vT",
-    "plan": "try B first (local, easy revert), confirm k=0.9/Mpc does not diverge over a=1e-4..1e-2, then rerun units_final2.py to see if the +3.5% plateau goes; then try A on top"
-  },
-  "options_tried_after_documenting": {
-    "B_damping_in_rhs": {
-      "what": "dFnu[lmax] = kb*vT*F[l-1] - (l+1)*F[l]*(inv_tau+gamma), gamma = max(k*vnu-(l+1)*inv_tau, 0)",
-      "result": "diverged: P=1.1e11 at k=1.36 h/Mpc, 1.1e246 at k=3",
-      "why": "the added rate (lmax+1)*gamma is far outside the explicit RK4 stability region; resolving it with a step limit needs ~1e6 steps",
-      "status": "reverted"
+
+  "steps_done": [
+    {
+      "id": "m0",
+      "claimed": "completed",
+      "actual": "environment recon, workload manifest at profiles/tenbol/workload_matter_v1.json, CAMB reference harness in tenbol/adapters/camb_reference.py. Verified working.",
+      "verified": true
     },
-    "B_operator_split": {
-      "what": "same gamma applied as an exact exponential on the top Fnu row after each RK4 step (unconditionally stable)",
-      "result": "stable, plateau unchanged: 0.9768..1.0349 (k=3 went 1.0343->1.0306, k=1.36 1.0350->1.0335)",
-      "conclusion": "neutrino truncation is not the cause of the plateau; reverted to keep the solver simple",
-      "status": "reverted"
+    {
+      "id": "m1a",
+      "claimed": "completed",
+      "actual": "flat LCDM + massive nu background. _omega_m matches analytic to 0 or 1e-16 at z=0/1/5/30/100 for two neutrino masses.",
+      "verified": true
+    },
+    {
+      "id": "m1b",
+      "claimed": "completed",
+      "actual": "RECFAST thermal history; x_e, opacity, c_s tables built and consumed.",
+      "verified": true
+    },
+    {
+      "id": "m1c",
+      "claimed": "completed",
+      "actual": "synchronous-gauge solver with photons+pol, massless+massive nu, tight coupling, RSA. Seven real bugs found and fixed this session (see bugs_fixed). Component transfers now agree to <5e-4.",
+      "verified": true,
+      "later_change_invalidated_numbers": "performance optimisation in 1fb5f84 moved dm by 2e-13; numbers re-measured, physics unchanged"
+    },
+    {
+      "id": "m1d",
+      "claimed": "completed",
+      "actual": "linear P(k,z) assembly + units. Units were solved from CAMB results.f90:3538: P = T^2 * 2pi^2 * k * P_R with k in 1/Mpc, T = delta/k^2. Our assembly: P = dm^2 * (2pi^2/k_Mpc^3) * A_s * (k_Mpc/kp)^(ns-1) * h^3.",
+      "verified": true,
+      "residual": "median +0.17%, BAO peak top +2.5%, high-k plateau +0.86% at z=0 (easing to +0.34% at z=2)"
+    },
+    {
+      "id": "m1e",
+      "claimed": "completed: 'validate nonlinear P vs CAMB on tuning set'",
+      "actual": "CONTRADICTED. Before this session HMcode2020 had ZERO importers anywhere in the repo (rg found only its own definition), and power.py had no nonlinear entry point at all. First actual execution gave 28.4% deviation.",
+      "verified": false,
+      "what_was_then_done": "three real bugs fixed: silent EdS fallback (terms=None -> (1,1)), Delta^2 vs P mixing in dewiggle, HMcode given the solver's growth instead of a 1.9%-wrong single-fluid growth. Result: HMcode alone 0.88% on a dense grid, but 3.50% end-to-end."
+    },
+    {
+      "id": "m2a",
+      "claimed": "completed: 'accuracy suite on 16/32/128'",
+      "actual": "CONTRADICTED. profiles/tenbol/evidence/ contains only accuracy_suite_n16.json and accuracy_suite_n32.json. No n128 artifact exists.",
+      "verified": false
+    },
+    {
+      "id": "m2b",
+      "claimed": "completed: 'CUDA backend ... + hardware validation'",
+      "actual": "CONTRADICTED. git ls-files | grep -ci cuda returns 0. tenbol/backends/ holds only device.py, torch_solver.py, triton_solver.py, __init__.py. torch_solver measured 9x SLOWER than numpy; triton_solver covers only 62 of 229 state rows. There is no CUDA kernel and no hardware validation.",
+      "verified": false
+    },
+    {
+      "id": "m2c",
+      "claimed": "completed: 'MPS backend implementation'",
+      "actual": "CONTRADICTED. git ls-files | grep -ci mps returns 0.",
+      "verified": false
+    },
+    {
+      "id": "m3",
+      "claimed": "completed: 'performance comparison vs tuned parallel CPU CAMB baseline'",
+      "actual": "CONTRADICTED. No baseline data and no comparison result are committed. baseline_cpu.py deadlocks under multiprocessing+CAMB. The only speed number that exists is the 1.65x optimisation-before/after self-comparison.",
+      "verified": false
+    },
+    {
+      "id": "m4",
+      "claimed": "completed: 'Rosenbrock/IMEX, multiple neutrino masses, sampler adapter'",
+      "actual": "CONTRADICTED. git ls-files | grep -ci for rosenbrock and sampler both return 0.",
+      "verified": false
+    },
+    {
+      "id": "m5",
+      "claimed": "completed: 'packaging, docs, final report with verified claims'",
+      "actual": "Tenbol_progress.md was corrected this session, at the user's explicit request, to state the measured reality instead of the claimed one.",
+      "verified": false
     }
+  ],
+
+  "bugs_fixed_this_session": [
+    {
+      "bug": "RSA threshold was a constant 30 instead of max(15, k*taurend)",
+      "effect": "wrong radiation-streaming approximation onset",
+      "commit": "early session"
+    },
+    {
+      "bug": "inv_tau used 1/tau0 instead of the accumulated 1/(tau0 - tau)",
+      "effect": "wrong free-streaming damping rate"
+    },
+    {
+      "bug": "angular CFL keyed on k*tau < 30 instead of 'hierarchy freely evolving'",
+      "effect": "neutrino hierarchy under-resolved inside the tight-coupling window"
+    },
+    {
+      "bug": "Fnu block never initialised (clxnu = qnu = 0)",
+      "effect": "massive-neutrino hierarchy started from zero"
+    },
+    {
+      "bug": "neutrino freeze criterion used k*tau_rem instead of k*tau",
+      "effect": "wrong high-k truncation onset"
+    },
+    {
+      "bug": "fg(2)/fr(2) indexed into the scalar block",
+      "effect": "out-of-bounds row writes"
+    },
+    {
+      "bug": "second-order tight-coupling terms missing",
+      "effect": "pig_tc and the quadratic terms disagreed with equations.f90:2509-2510"
+    },
+    {
+      "bug": "HMcode silently used EdS terms (1,1) when terms was None",
+      "effect": "28.4% high-k deficit; now a hard ValueError",
+      "commit": "322b334"
+    },
+    {
+      "bug": "dewiggle mixed P and Delta^2 (4 orders of magnitude)",
+      "effect": "19.4% -> 0.859% after unifying to Delta^2",
+      "commit": "a2c59f5"
+    },
+    {
+      "bug": "HMcode fed a single-fluid growth with 1.9% method error",
+      "effect": "now uses the solver's own growth via growth_callable; 0.33%",
+      "commit": "bce6a1a"
+    },
+    {
+      "bug": "growth_callable sorted by z instead of a=1/(1+z)",
+      "effect": "interpolation axis reversed, produced 0.0128..1938"
+    },
+    {
+      "bug": "matter_power_nl passed the caller's sparse k grid to HMcode",
+      "effect": "2-point input made k=1 wrong by 27%; now builds its own dense grid"
+    },
+    {
+      "bug": "_background_pair unpacking: bg, _ = instead of (bg, _th), _ ="
+    },
+    {
+      "bug": "neutrino switch time used the recombination taurend instead of matter_verydom_tau (a_verydom = 5*grho_r0/grho_m0)",
+      "effect": "high-k neutrino plateau +3.42% -> +0.62%",
+      "commit": "5b68ab7"
+    }
+  ],
+
+  "attempts_that_failed": [
+    {
+      "attempt": "neutrino scheme B: extra damping rate written into the RHS",
+      "result": "P = 1.1e11 at k=1.36, 1.1e246 at k=3. The added damping rate is far outside the explicit RK4 stability region and needs ~1e6 steps.",
+      "reverted": true
+    },
+    {
+      "attempt": "neutrino scheme B as operator splitting (exact exponential decay after each step)",
+      "result": "stable but the high-k plateau did not move (1.0349 vs baseline 1.0359)",
+      "reverted": true
+    },
+    {
+      "attempt": "lower the neutrino truncation to lmax=4 statically / by k bucket",
+      "result": "all three variants diverge: a=9.36e-2; a=3.29e-2 at k=0.91; a=3.42e-3 with |Fnu|=1e83. The l=4 truncation sink is 5/tau ~ 0.042 against a driving term far larger.",
+      "reverted": true
+    },
+    {
+      "attempt": "bump neutrino switch threshold alone",
+      "result": "NumericalFailure at a=7.057e-3, k=2.010; needs the high_ktau downgrade and dlna_nu together",
+      "reverted": true
+    },
+    {
+      "attempt": "two-fluid linear growth",
+      "result": "max|dev| 5.78% vs single-fluid 1.86%; worse",
+      "reverted": true
+    },
+    {
+      "attempt": "pig_eff (force pig=0 under RSA)",
+      "result": "bit-identical peak/trough values; no effect",
+      "reverted": true
+    },
+    {
+      "attempt": "cs2 sensitivity sweep",
+      "result": "10x change moved dm only in the 8th significant digit; cs2 is irrelevant to the residual"
+    },
+    {
+      "attempt": "adaptive integrator for the linear BAO residual",
+      "result": "no gain: not a phase error (peak positions identical), not a truncation error (10x smaller steps gave bit-identical results)"
+    },
+    {
+      "attempt": "five versions of a CAMB-transfer-only cold-spectrum comparison",
+      "result": "each failed on MY OWN unit errors: missing h^3 (ratio 5.49 = 1/0.30), delta_tot using /RATIO instead of *RATIO (1.72 = 1/0.5484), broken indentation, then max|dev| 0.96 with k=4 ratio 0.056. Lesson: do not hand-reassemble CAMB transfer components; use the solver's own delta_m path that has never produced these errors.",
+      "abandoned": true
+    },
+    {
+      "attempt": "merge the four _interp calls in coefficients into one searchsorted pass (_interp_multi)",
+      "result": "29.81 s vs 29.75 s - no gain, the 4-element Python loop ate the saving; reverted"
+    }
+  ],
+
+  "cold_spectrum_experiment": {
+    "question": "does HMcode want the cold-matter spectrum plus the real f_nu, as its own docstring says?",
+    "setup": "one cosmology at sum m_nu=0.30 eV, our solver on a 32-point grid, two HMcode builds sharing one linear solve, 37 minutes wall time",
+    "total_spectrum_omega_nu_0": {"max_abs_dev": 0.06419, "ratios_k_0.1_0.5_1_2_4": [1.0085, 0.9965, 0.9863, 0.9757, 0.9483]},
+    "cold_spectrum_omega_nu_true": {"max_abs_dev": 0.06297, "ratios_k_0.1_0.5_1_2_4": [1.0452, 1.0343, 1.0218, 1.0021, 0.9667]},
+    "verdict": "MIXED. High k improves (5.2% deficit -> 3.3% at k=4) but mid/low k gets 3-4pp worse. Net max|dev| 6.42% -> 6.30%, unchanged.",
+    "the_bigger_finding": "both numbers are ~6.4% against 1.40% measured earlier for the same cosmology with CAMB's 16384-point spectrum. Grid density dominates both candidates, so this comparison is compressed against a 6.4% floor and cannot decide the question.",
+    "status": "cold-spectrum change (30afb7d) remains UNVERIFIED. Do not quote an improvement for it."
   },
-  "plateau_decomposition": {
-    "method": "identical pipeline rerun with m_nu = 1e-4 eV instead of 0.06 eV",
-    "plateau_mnu_0.06": "+3.42% (mean of k >= 0.28 h/Mpc)",
-    "plateau_mnu_1e-4": "+1.39%",
-    "neutrino_share": "~2.0pp, only for k > 0.06 h/Mpc",
-    "non_neutrino_share": "~1.4pp residual with an effectively massless species",
-    "implication": "two independent errors, not one: a neutrino-sector ~2pp and a CDM+b solver ~1.4pp"
+
+  "neutrino_facts_established": [
+    "matter_verydom_tau from results.f90:2107, a_verydom = 5*grho_r0/grho_m0",
+    "k*tau > max(20, lmax-4) triggers the lmaxnu_high_ktau downgrade",
+    "dlna_nu is a separate step-size limit, NOT shared with dlna_acoustic",
+    "nu_l_accuracy_boost = lAccuracyBoost (equations.f90:511), and the pinned reference uses l_accuracy_boost = 2.0, so lmaxnu_tau = int(4*2) = 8, not 4",
+    "accurate_massive_neutrinos defaults to .false. in CAMB, so high_ktau really does use lmaxnu_tau=4 there",
+    "lmax_nu_high_ktau 4 -> 8 changes the high-k mean from +0.8735% to +0.8647%: nothing",
+    "dlna_nu 1.0 vs 0.20 gives bit-identical ratios, so the ladder is not step-limited for k <= 5"
+  ],
+
+  "camb_facts_established": [
+    "halofit_version='mead2020' maps to imead=3 (halofit.f90:626), so As = 5.196",
+    "Mead FDAMP/ALPHA clamps are in halofit.f90:181-184",
+    "sig8z_cold is sigma8 of the neutrino-free spectrum and feeds eta, k_star, k_damp and fdamp simultaneously",
+    "delta_p_b = cs2*clxb is CAMB's own default (equations.f90:2466-2467, evolve_TM off)",
+    "GetScalarSource is not exposed through the Python transfer interface, so source-level comparison needs a Fortran instrument"
+  ],
+
+  "reference_convergence": {
+    "accuracy_boost_l_accuracy_boost_time_step_boost 1.0_vs_2.0": "max deviation 0.027% over k = 0.3..5 h/Mpc",
+    "boost_4_and_8": "cannot run: CAMB hard-stops with 'Need to increase max_l_evolve' because that ceiling is a compile-time constant",
+    "conclusion": "the reference is converged; our +0.86% high-k offset is a real error on our side"
   },
-  "residual_is_not_an_integrator_error": {
-    "method": "m_nu = 1e-4 eV, four step-control settings, plateau = mean ratio for k >= 0.28 h/Mpc",
-    "baseline": "+1.3916%",
-    "dlna_acoustic_0.005": "+1.3916% (bit-identical: the angular CFL is not the active limit)",
-    "dlna_max_0.00125": "+1.3917% (ratio moved by 0.0002 at worst)",
-    "both_quartered": "+1.3918%",
-    "conclusion": "tightening the step 4x changes nothing, so the ~1.4pp residual is in the equations or the initial conditions, not in the time integrator; do not spend more effort on step control"
+
+  "eliminated_suspects_for_the_high_k_residual": [
+    "reference convergence (0.027%)",
+    "time integrator (quartering the steps moved the plateau by 0.0002)",
+    "neutrino ladder height (4 vs 8: no effect)",
+    "neutrino ladder step (dlna_nu 1.0 vs 0.20: bit-identical)",
+    "component split (delta_cdm vs delta_baryon agree to <5e-4)",
+    "dm assembly (dgrho_matter/grho_matter is what CAMB's delta_tot is)",
+    "delta_p_b (CAMB's default is the same cs2*clxb)",
+    "gauge equations (our z, dz and etak' match equations.f90:2377-2378, 2431 line for line)",
+    "initial conditions (a_start=1e-7 gives the best result; 1e-6 already degrades - the superhorizon series is right)",
+    "Silk damping / opacity (+-2% on kappa moves the BAO peak by 0.039pp against a 2.5% residual)",
+    "baryon lag (db/dc agrees with CAMB to 4e-4)",
+    "cs2 (10x change moves dm in the 8th digit)",
+    "lmax_g (RSA already freezes the high multipoles)",
+    "transfer units (solved from results.f90:3538 and cross-checked against CAMB's own numbers)",
+    "BAO phase (peak positions identical to 5 decimals)"
+  ],
+
+  "remaining_residual_shape": {
+    "shape": "+1.60% at k=0.3 falling to +0.51% at k=5 at z=0",
+    "redshift_dependence": "+0.76% at z=0 falling to +0.34% at z=2",
+    "interpretation": "the growth rate is slightly high; the remaining suspects are the shared evolution terms (etak, h, slip) and nothing in the neutrino sector"
   },
-  "camb_neutrino_switch_thresholds_from_source": {
-    "source": "equations.f90:311-315 and results.f90:2106-2117",
-    "neutrino": "tau_switch_no_nu_multpoles = max(15/k*switchBoost, min(State%taurend, matter_verydom_tau))",
-    "matter_verydom_tau": "tau at a_verydom, with a_verydom = AccuracyBoost*TimeSwitchBoost*5*(grhog+grhornomass)/(grhoc+grhob), i.e. about 5*Omega_r/Omega_m ~ 6.6e-4 (z ~ 1500)",
-    "State_taurend": "min(tau at a=1, reion_tau_start) ~ 1e4 Mpc",
-    "so_min_takes": "matter_verydom_tau, so the neutrino switch fires at tau ~ few hundred, set by radiation-matter equality, NOT by the end of recombination and NOT by tau0",
-    "photons": "tau_switch_no_phot_multpoles = max(15/k, State%taurend)*latePhotSwitchBoost, which uses State%taurend (~1e4), a third and much later value",
-    "our_code": "perturbations.py uses one _taurend for both sectors, defined as the tau where x_e < 1e-2 (z = 878, tau = 328.79); the neutrino threshold is therefore later than CAMB's (so the neutrino hierarchy runs free for too long, which is the direction that makes P too high) and the photon threshold is far too early"
+
+  "performance": {
+    "profile_before": {"steps": 8751, "calls": 23200000, "seconds": 49.16, "rhs_seconds": 45.73, "rhs_share": 0.93, "_l_coeff_calls": 2240320, "_l_coeff_seconds": 8.91, "coefficients_seconds": 7.19},
+    "optimisations": [
+      "precompute kk/kk2 over l once per rhs instead of 2.24M per-multipole calls",
+      "reuse batch.coefficients between k2 and k3 in the RK4 stage, which are evaluated at the same scale factor"
+    ],
+    "after_seconds": 29.75,
+    "commit": "1fb5f84",
+    "rejected_optimisation": "merging the four _interp searchsorted passes gave 29.81 s (no gain) and was reverted",
+    "why_bucket_by_k_stays": "mixing k in one batch would make every k run at the step size the hardest k needs; with a 40%-fixed-cost rhs the arithmetic volume would grow ~12x for 48 k points, far more than the saved call overhead"
   },
-  "neutrino_threshold_fix_attempt": {
-    "what": "replaced the neutrino switch time (end-of-recombination proxy, tau = 328.79 at z = 878) with CAMB's matter_verydom_tau = 2198.46 Mpc (a_verydom = 5*Omega_r/Omega_m = 2.39e-2, z = 40.8), which is the value equations.f90:311-315 actually selects",
-    "measured_a_verydom": "grho_r0/grho_m0 = 4.784774e-03, so a_verydom = 2.392e-2 and tau(a_verydom) = 2198.46 Mpc against tau(a=1) = 14166.41",
-    "result": "NumericalFailure: non-finite perturbation state at a = 7.057e-3, k = 2.010e+00 /Mpc",
-    "why": "the neutrino ladder now evolves freely across the whole z = 878 -> 40.8 stretch; with lmax_nu = 12 and no high_ktau demotion the top row has no sink strong enough for k ~ 2 /Mpc, which is the same failure mode as the three earlier truncation attempts",
-    "conclusion": "the threshold is genuinely wrong, but fixing it alone is not possible: it must be paired with CAMB's high_ktau demotion to lmax 4 and a stable treatment of that truncated ladder",
-    "status": "FIXED. The threshold alone diverged, but the three pieces together hold: threshold + high_ktau demotion to lmax=4 + an independent dlna_nu step limit for the freely-streaming ladder. k <= 5 h/Mpc now integrates and the high-k plateau drops from +3.42% to +0.60%. See neutrino_switch_fix.json for the numbers and the CAMB source lines."
-  },
-  "repo_state_at_compaction": {
-    "head": "main@b6e5216",
-    "worktree": "clean",
-    "pytest": "6 passed",
-    "note": "all three neutrino-lmax edits were git-checkout'd away; no diverging code is committed"
-  },
+
+  "open_problems": [
+    "linear median is +0.17% but the BAO peak top is +2.5% and the high-k plateau is +0.86% (easing to +0.34% at z=2); the shape says growth rate, the suspects left are etak/h/slip",
+    "nonlinear is 0.88% (HMcode on a dense CAMB spectrum) and 3.50% end-to-end; the 0.5% target is NOT met",
+    "k = 10 h/Mpc still diverges at a = 8.4e-5; the first non-finite value is in the photon/baryon tight-coupling terms",
+    "sigma.linear_growth has a 1.9% single-fluid method error (HMcode now avoids it via growth_callable, but the function itself is still wrong)",
+    "sum m_nu = 0.30 eV at 1.40% is the worst multi-cosmology case; every case peaks at k = 4-5",
+    "MPS can only be shown implementable; there is no Apple hardware to validate on",
+    "there is no CUDA backend, no CPU baseline vs CAMB, and no n=128 accuracy artifact"
+  ],
+
+  "next_steps_considered": [
+    "batch several k together - rejected on the arithmetic above",
+    "128-point end-to-end run with the 1.65x faster solver, to settle the cold-spectrum question on a grid where HMcode is not swamped (a run was started and is still going)",
+    "instrument CAMB's Fortran GetScalarSource to compare source terms directly - the heaviest option and the only one that can name the residual",
+    "build the GPU backend, since the linear solver is the bottleneck for every accuracy experiment"
+  ],
+
   "do_not_claim": [
-    "no CUDA/MPS/sampler files exist (git ls-files | grep -ci cuda -> 0), despite task list marking m2b/m2c/m4 completed",
-    "accuracy_suite only has n16/n32 evidence; n=128 never produced",
-    "linear P(k) is NOT at 0.5%"
+    "do not claim the nonlinear target is met - it is 0.88% / 3.50% against a 0.5% requirement",
+    "do not claim the cold-spectrum change helps - it is mixed and unverified",
+    "do not claim a speedup vs CAMB - the 1.65x is an optimisation before/after self-comparison",
+    "do not claim CUDA, MPS, n=128, a CAMB baseline or a sampler adapter exists - all four checks return zero files",
+    "do not cite the progress table's m1e/m2a/m2b/m2c/m3/m4/m5 as completed without the contradictions recorded above"
   ]
 }
