@@ -325,6 +325,16 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     kappa = c["kappa"]
     cs2 = c["cs2"]
     tau = c["tau"]
+    # _l_coeff was being called 2.24M times per trajectory - 18% of the whole
+    # profile - and it only depends on k and l.  One vectorised pass over l
+    # replaces every call in the four hierarchy loops below.
+    _lmax_any = max(L.lmax_g, L.lmax_r, L.lmax_pol) + 1
+    _ls = np.arange(_lmax_any + 1, dtype=np.float64)
+    _den = 2.0 * _ls + 1.0
+    # Keep the original (k*l)/(2l+1) evaluation order so the result stays
+    # bit-identical; k*(l/(2l+1)) can differ by an ulp.
+    kk_tab = (k[None, :] * _ls[:, None]) / _den[:, None]
+    kk2_tab = (k[None, :] * (_ls[:, None] + 1.0)) / _den[:, None]
     grho_g, grho_r = c["grho_g"], c["grho_r"]
     grho_b, grho_c = c["grho_b"], c["grho_c"]
     grho_spT = c["grho_nu_species"].T                     # (S, T)
@@ -461,11 +471,11 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     # ---- photon moments (rows), tight coupling / RSA freeze them -------
     clamp = tcu | rsa_g
     for l in range(3, L.lmax_g):
-        kk, kk2 = _l_coeff(k, l)
+        kk, kk2 = kk_tab[l], kk2_tab[l]
         dY[L.fg(l)] = np.where(
             clamp, 0.0,
             kk * Y[L.fg(l - 1)] - kk2 * Y[L.fg(l + 1)] - kappa * Y[L.fg(l)])
-    kk, _ = _l_coeff(k, L.lmax_g)
+    kk = kk_tab[L.lmax_g]
     dY[L.fg(L.lmax_g)] = np.where(
         clamp, 0.0,
         kk * Y[L.fg(L.lmax_g - 1)] - (L.lmax_g + 1) * Y[L.fg(L.lmax_g)] * inv_tau
@@ -475,13 +485,13 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     dY[L.g(2)] = np.where(clamp, 0.0,
                           -kappa * (Y[L.g(2)] - polter) - k / 3.0 * Y[L.g(3)])
     for l in range(3, L.lmax_pol):
-        kk, _ = _l_coeff(k, l)
+        kk = kk_tab[l]
         polfack = (l + 3.0) * (l - 1.0) / (l + 1.0) * k
         dY[L.g(l)] = np.where(
             clamp, 0.0,
             -kappa * Y[L.g(l)] + kk * Y[L.g(l - 1)] - polfack * Y[L.g(l + 1)])
     poltrunc = L.lmax_pol / max(1, L.lmax_pol - 2)
-    kk, _ = _l_coeff(k, L.lmax_pol)
+    kk = kk_tab[L.lmax_pol]
     dY[L.g(L.lmax_pol)] = np.where(
         clamp, 0.0,
         -kappa * Y[L.g(L.lmax_pol)] + k * poltrunc * Y[L.g(L.lmax_pol - 1)]
@@ -489,16 +499,16 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
 
     # ---- massless neutrinos -------------------------------------------
     dY[L.scalar("dr")] = np.where(rsa_r, 0.0, -k * (4.0 / 3.0 * z + qr_e))
-    kk1, kk12 = _l_coeff(k, 1)
+    kk1, kk12 = kk_tab[1], kk2_tab[1]
     dY[L.scalar("qr")] = np.where(rsa_r, 0.0, kk1 * dr_e - kk12 * pir)
-    kk2_, kk22 = _l_coeff(k, 2)
+    kk2_, kk22 = kk_tab[2], kk2_tab[2]
     dY[L.scalar("pir")] = np.where(
         rsa_r, 0.0, kk2_ * qr_e - kk22 * Y[L.fr(3)] + (8.0 / 15.0) * k * sigma)
     for l in range(3, L.lmax_r):
-        kk, kk2 = _l_coeff(k, l)
+        kk, kk2 = kk_tab[l], kk2_tab[l]
         dY[L.fr(l)] = np.where(rsa_r, 0.0,
                                kk * Y[L.fr(l - 1)] - kk2 * Y[L.fr(l + 1)])
-    kk, _ = _l_coeff(k, L.lmax_r)
+    kk = kk_tab[L.lmax_r]
     dY[L.fr(L.lmax_r)] = np.where(
         rsa_r, 0.0,
         kk * Y[L.fr(L.lmax_r - 1)] - (L.lmax_r + 1) * Y[L.fr(L.lmax_r)] * inv_tau)
@@ -748,8 +758,12 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
         a_prev = a.copy()
         Y_prev = Y
         k1 = rhs(Y, a, batch, c)
-        k2 = rhs(Y + 0.5 * hn * k1, a * np.exp(0.5 * h), batch)
-        k3 = rhs(Y + 0.5 * hn * k2, a * np.exp(0.5 * h), batch)
+        # k2 and k3 are evaluated at the same scale factor, so the expensive
+        # background/tau/kappa interpolation is computed once for both.
+        a_half = a * np.exp(0.5 * h)
+        c_half = batch.coefficients(a_half)
+        k2 = rhs(Y + 0.5 * hn * k1, a_half, batch, c_half)
+        k3 = rhs(Y + 0.5 * hn * k2, a_half, batch, c_half)
         k4 = rhs(Y + hn * k3, a * np.exp(h), batch)
         Y_new = Y + (hn / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
         if not np.all(np.isfinite(Y_new)):
