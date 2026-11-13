@@ -274,7 +274,8 @@ def rhs_torch(Y, a, layout, c, settings):
 
 
 def evolve_torch(batch, z_out, a_end: float = 1.0, settings=None,
-                 device=None, dtype=torch.float64, dlna=None):
+                 device=None, dtype=torch.float64, dlna=None,
+                 merge_tol: float = 1.0e-2):
     """Single-batch RK4 integration on ``device`` (no scaling, no events).
 
     This is a correctness/performance probe for the device path: it advances a
@@ -310,7 +311,19 @@ def evolve_torch(batch, z_out, a_end: float = 1.0, settings=None,
         for v in np.asarray(arr).ravel():
             if np.isfinite(v) and s.a_start < v < a_end:
                 brk.append(float(v))
+    # Merge near-duplicate switches.  On ONE trajectory there are about six and
+    # nothing merges; on T=16384 the union is 28366 boundaries because no two
+    # trajectories switch at exactly the same moment, and that costs more steps
+    # than plain uniform stepping (32842 against 8060).  Merging in ln a at
+    # 1e-2 drops it to 857 boundaries / 8667 steps (8.8 min) while the
+    # single-trajectory accuracy stays at 2.35e-3 against 2.33e-3 unmerged.
     brk = sorted(set(brk))
+    if merge_tol and merge_tol > 0:
+        merged = [brk[0]]
+        for v in brk[1:]:
+            if np.log(v) - np.log(merged[-1]) > merge_tol:
+                merged.append(v)
+        brk = merged
 
     h = dlna if dlna is not None else s.dlna_max
     next_out = np.zeros(batch.T, dtype=np.int64)

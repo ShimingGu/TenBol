@@ -129,8 +129,12 @@ class PerturbationBatch:
         self._tau_grid = bg.tau(np.exp(self._ln_a))                    # (B, N)
         # Conformal time at a = 1.  CAMB's radiation damping uses the *remaining*
         # conformal time (tau0 - tau), which is what makes 1/tau huge today.
+        # Per-TRAJECTORY, not per-cosmology: _tau_grid has one row per
+        # cosmology, so this used to be len == n_cosmo, which equals T only when
+        # bucket_by_k runs a single k.  Indexing by self.sample makes it correct
+        # for any batch (T = n_k * n_cosmo).
         self._tau_end = np.array([np.interp(0.0, self._ln_a, row)
-                                  for row in self._tau_grid])
+                                  for row in self._tau_grid])[self.sample]
         # Conformal time at the end of recombination.  CAMB switches the
         # radiation hierarchies to the algebraic streaming approximation at
         #   tau_switch = max(15/k, taurend)
@@ -160,9 +164,13 @@ class PerturbationBatch:
         # z = 878, tau = 328.79) freezes the massive-neutrino hierarchy 6.7x too
         # early: CAMB keeps it evolving until tau = 2198.46 (z = 40.8) here.
         _a_vd = 5.0 * bg.grho_r0 / (bg.grho_c0 + bg.grho_b0)
+        # _a_vd is per-cosmology; expand it to per-trajectory first.  Without
+        # the expansion zip() silently truncated to n_cosmo entries, so any
+        # batch with T > n_cosmo got a _taurend_nu too short to broadcast.
+        _a_vd_t = np.ravel(_a_vd)[np.asarray(self.sample, dtype=np.int64)]
         self._taurend_nu = np.array(
             [np.interp(np.log(aa), self._ln_a, self._tau_grid[si])
-             for aa, si in zip(np.ravel(_a_vd), self.sample)])
+             for aa, si in zip(_a_vd_t, self.sample)])
         self._cs2_tab = thermal.cs2_b(np.exp(self._ln_a))
         self._tau_tab = bg._tau_table
         self._rho_spl, self._p_spl = bg._nu_tables()
@@ -210,7 +218,10 @@ class PerturbationBatch:
         vnu = 1.0 / np.sqrt(1.0 + (am[:, :, None] / NU_Q[None, None, :]) ** 2)
         return {
             "h": h, "hprime": hprime, "gpres": gpres, "tau": tau,
-            "tau_rem": np.maximum(self._tau_end[:, None] - tau, 0.0),
+            # Both are (T,): _tau_end became per-trajectory when the
+            # batch axis was fixed.  An extra [:, None] here broadcast to
+            # (T, T) - 2 GiB at T=16384, which blew up the CUDA allocator.
+            "tau_rem": np.maximum(self._tau_end - tau, 0.0),
             "taurend": self._taurend,
             "taurend_nu": self._taurend_nu,
             "kappa": kappa, "dopacity": dopacity, "cs2": cs2, "grho_c": grho_c, "grho_b": grho_b,
@@ -557,7 +568,6 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     # Freeze the massive-neutrino hierarchy while k*(tau0 - tau) is large
     # (early times), mirroring CAMB's high_ktau switch.  Without this the
     # block has no sink and its cascade runs away.
-    ktau_rem = k * c["tau_rem"]
     # CAMB: tau_switch_no_nu_multpoles = max(15/k * switchBoost,
     #                                        min(taurend, matter_verydom_tau))
     # i.e. k*tau > max(15, k*taurend), on the ACCUMULATED conformal time.

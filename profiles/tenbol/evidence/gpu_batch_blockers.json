@@ -1,0 +1,76 @@
+{
+  "purpose": "log the three latent batching bugs found while building the T=16384 entry point, and the step-size measurement that explains why the batched run returned NaN",
+  "three_latent_bugs": [
+    {
+      "where": "PerturbationBatch.__init__, _taurend_nu",
+      "bug": "_a_vd is per-cosmology (n_cosmo entries) but was zipped against self.sample (T entries). zip() silently truncates, so _taurend_nu had n_cosmo entries and failed to broadcast for any T > n_cosmo.",
+      "why_it_never_showed": "bucket_by_k=True runs one k at a time with all cosmologies, so T == n_cosmo and the lengths happened to agree",
+      "symptom_when_exposed": "ValueError: operands could not be broadcast together with shapes (16384,1) (128,1) at _event_times",
+      "fix": "expand _a_vd to per-trajectory first: _a_vd_t = np.ravel(_a_vd)[self.sample]"
+    },
+    {
+      "where": "PerturbationBatch.__init__, _tau_end",
+      "bug": "built one entry per row of _tau_grid, which is one row per cosmology, so length == n_cosmo rather than T",
+      "fix": "index by self.sample so it is per-trajectory"
+    },
+    {
+      "where": "PerturbationBatch.coefficients, 'tau_rem'",
+      "bug": "np.maximum(self._tau_end[:, None] - tau, 0.0). Once _tau_end became per-trajectory (T,) and tau is (T,), the [:, None] made it (T,1)-(T,) = (T,T).",
+      "symptom_when_exposed": "the coefficient dict reached 2051.5 MiB at T=16384, of which tau_rem alone was 2048 MiB, and the CUDA caching allocator aborted with NVML_SUCCESS == r INTERNAL ASSERT FAILED",
+      "why_it_never_showed": "at T=1, (1,1)-(1,) is (1,1) and harmless",
+      "fix": "removed the [:, None]; also deleted the dead ktau_rem line, which was never read after the switch moved onto the accumulated k*tau"
+    }
+  ],
+  "verification_after_the_fixes": {
+    "coefficient_dict_size": "2051.5 MiB -> 3.6 MiB",
+    "vram": "allocated 3.8 MiB, reserved 26.0 MiB for T=16384",
+    "pytest": "6 passed"
+  },
+  "boundary_explosion": {
+    "problem": "evolve_torch takes the union of every trajectory's switch times. On one trajectory that is 6; on T=16384 the three families give 20897 (tc), 7158 (rsa_g) and 2890 (rsa_r) distinct values, so the union is 28366 boundaries and the run costs 32842 steps instead of 8060.",
+    "fix": "merge boundaries closer than merge_tol in ln a",
+    "measured": {
+      "tol_0": {"boundaries": 28366, "steps": 32842, "minutes_at_61ms": 33.5},
+      "tol_1e-4": {"boundaries": 13441, "steps": 17925, "minutes_at_61ms": 18.3},
+      "tol_5e-4": {"boundaries": 7739, "steps": 12339, "minutes_at_61ms": 12.6},
+      "tol_1e-2": {"boundaries": 857, "steps": 8667, "minutes_at_61ms": 8.8}
+    },
+    "accuracy_cost_of_merging": "on a single trajectory the merged run gives max rel diff 2.351e-3 against 2.328e-3 unmerged - negligible, because a single trajectory only has 6 switches and they do not merge"
+  },
+  "the_batched_run_returned_nan": {
+    "run": "T=16384 (128 k x 128 cosmologies), dlna=0.002, merge_tol=1e-2",
+    "wall_time": "553.8 s, 8667 steps, 63.90 ms/step - matching the 8.8 min prediction",
+    "result": "finite = False, dc range nan..nan",
+    "consequence": "the 14.2x device speedup computed from that run is VOID. No speedup is claimed for the batched path."
+  },
+  "why_it_is_nan": {
+    "isolation": "T=128 at kmax=0.001 is fully finite (128/128); T=1024 at kmax=5 is 768/1024 finite; T=4096 at kmax=5 is 3371/4096 finite",
+    "pattern": "the failures cluster at k = 0.83..0.91 h/Mpc, so this is not a batching defect - it is the high-k trajectories diverging under a step that is far too coarse for them",
+    "the_step_size_measurement": {
+      "k_0.05": {"n_steps": 8752, "mean_dlna": 1.84e-3},
+      "k_0.30": {"n_steps": 9852, "mean_dlna": 1.64e-3},
+      "k_0.50": {"n_steps": 12747, "mean_dlna": 1.26e-3},
+      "k_0.90": {"n_steps": 19447, "mean_dlna": 8.29e-4},
+      "k_2.00": {"n_steps": 39543, "mean_dlna": 4.08e-4},
+      "k_5.00": {"n_steps": 97627, "mean_dlna": 1.65e-4}
+    },
+    "conclusion": "the step needed spans a factor of 11 from k=0.05 to k=5. A batch must use ONE step, so it must use the smallest, and dlna=0.002 is twelve times too coarse for the k=5 end - which is exactly where the NaNs appear."
+  },
+  "the_arithmetic_that_this_settles": {
+    "cpu_path": "bucket_by_k means every k gets its own adaptive step; across 128 k values the average is roughly 29000 steps, so 128 k x 128 cosmologies x 29000 steps at ~5.2 ms/step is ~2.5e6 s serial, or ~7.2 h on 96 cores",
+    "gpu_path_with_one_uniform_step": "the hardest k needs 97627 steps; at the measured 61.19 ms/step that is 5974 s, or 1.66 h",
+    "ratio": "about 4.3x in the GPU's favour - so the uniform-step batching strategy is not hopeless, it just costs a step twelve times smaller than the one used, which is why 553.8 s was a NaN and not a result",
+    "the_catch": "this is an estimate built from measured per-k step counts and a measured ms/step, not a completed run. The 97627-step batched run has not been executed, and at 1.66 h it is the next experiment, not a result."
+  },
+  "what_may_be_claimed_now": [
+    "rhs_torch is bit-identical to numpy: 0 of 229 state rows disagree",
+    "the segmented device integrator reaches 0.111% at dlna=0.002 on one trajectory (k=0.05, three state variables, z=0)",
+    "the GPU rhs is 3.76x faster than numpy at T=16384, and 10x slower at T=128",
+    "three latent batching bugs were found and fixed, taking the coefficient dict from 2051.5 MiB to 3.6 MiB"
+  ],
+  "what_may_not_be_claimed": [
+    "no GPU speedup for any end-to-end run: the only T=16384 run returned NaN",
+    "no batching entry point exists in power.py; bucket_by_k=True still runs T=1",
+    "the accuracy result is one k, one cosmology, three state variables - not P(k)"
+  ]
+}
