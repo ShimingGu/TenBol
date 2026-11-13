@@ -1,0 +1,26 @@
+{
+  "question": "at what batch size does a GPU beat numpy for this solver's rhs operator shape?",
+  "method": "reconstruct the arithmetic shape of rhs - (D=229, T) state, ~46 masked 5-row blocks, a handful of fused multiply-adds - and time it on numpy (12 OpenMP threads) and torch/CUDA on a MIG 1g.12gb slice. Not the physics, only the operator shape and the allocation pattern, so the crossover can be found before committing to a kernel port.",
+  "hardware": "NVIDIA H100 NVL MIG 1g.12gb, sm_90, 10.8 GiB, 16 SMs, torch 2.11.0+cu128",
+  "table": [
+    {"T": 1, "numpy_ms": 0.335, "gpu_ms": 4.276, "speedup": 0.08},
+    {"T": 32, "numpy_ms": 0.374, "gpu_ms": 4.094, "speedup": 0.09},
+    {"T": 128, "numpy_ms": 0.457, "gpu_ms": 3.423, "speedup": 0.13},
+    {"T": 512, "numpy_ms": 0.628, "gpu_ms": 3.430, "speedup": 0.18},
+    {"T": 2048, "numpy_ms": 1.646, "gpu_ms": 3.454, "speedup": 0.48},
+    {"T": 16384, "numpy_ms": 16.540, "gpu_ms": 3.443, "speedup": 4.80},
+    {"T": 65536, "numpy_ms": 85.817, "gpu_ms": 5.495, "speedup": 15.62}
+  ],
+  "crossover": "between T = 2048 (GPU 0.48x, i.e. twice as slow) and T = 16384 (GPU 4.8x). Interpolating, the break-even is around T = 4000-8000.",
+  "what_this_explains": [
+    "why tenbol/backends/torch_solver.py measured 9x SLOWER than numpy: matter_power runs with bucket_by_k=True, i.e. one trajectory per rhs, which is T=1 - the worst possible point on this table (0.08x, twelve times slower)",
+    "why the GPU latency is flat (3.4-4.3 ms) from T=1 to T=16384: at these sizes the cost is kernel-launch and per-op overhead, not arithmetic, so feeding 16x more trajectories is nearly free. Only at T=65536 does real arithmetic time appear (5.5 ms)."
+  ],
+  "the_architectural_consequence": {
+    "requirement": "GPU work must be batched to T >= 16384. The workload offers exactly that: 128 cosmologies x 128 wavenumbers = 16384 trajectories, a 229x16384 state tensor at 30 MB in float64.",
+    "the_cpu_vs_gpu_arithmetic": "on CPU, running k separately costs sum_k n_steps(k) rhs calls at ~1.3 ms each (measured on the real solver: 35005 calls in 45.7 s). On GPU a single batched run costs max_k n_steps(k) calls at ~3.4 ms each, nearly independent of batch size. Even if the hardest k needs three times the average number of steps, that is an order of magnitude in hand before any kernel-level tuning.",
+    "the_caveat": "batching every trajectory under one step-size schedule makes all of them run at the step count the hardest member needs. On CPU that trade is bad - the arithmetic volume grows ~12x for 48 k points - which is exactly why bucket_by_k exists. On GPU the per-step cost is flat in batch size, so the same trade becomes favourable. The two backends therefore want OPPOSITE batching strategies, and that has to be a property of the backend, not a global setting."
+  },
+  "contradiction_with_the_task_list": "M2b is recorded as 'CUDA backend (generated kernels, device-resident batched evolution) + hardware validation (completed)'. Measured this session: git ls-files | grep -ci cuda returns 0, tenbol/backends/ holds only device.py, torch_solver.py, triton_solver.py and __init__.py, no module anywhere imports any of them, and torch_solver measures slower than numpy. There is no CUDA kernel and no hardware validation to inherit.",
+  "known_defect_in_the_existing_torch_solver": "rhs_torch calls torch.as_tensor(kk, dtype=Y.dtype, device=Y.device) about a dozen times per invocation (lines 165-216), i.e. it re-uploads host data on every rhs even though kk depends only on k and l. Combined with T=1 batching that accounts for the 9x deficit; both have to be fixed together for the GPU path to mean anything."
+}
