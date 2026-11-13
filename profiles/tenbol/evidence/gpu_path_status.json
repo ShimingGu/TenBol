@@ -1,0 +1,38 @@
+{
+  "question": "is the existing torch/CUDA path usable, and at what batch size does it actually win?",
+  "starting_state": {
+    "claim_in_task_list": "M2b 'CUDA backend (generated kernels, device-resident batched evolution) + hardware validation' recorded as completed",
+    "measured": "git ls-files | grep -ci cuda returns 0; tenbol/backends/ holds only device.py, torch_solver.py, triton_solver.py and __init__.py; no module anywhere imports any of them; rhs_torch disagreed with the numpy solver on 48 of 229 state rows and evolve_torch ran at 75 ms/step, roughly 8x slower than numpy",
+    "conclusion": "there was no CUDA backend and no hardware validation to inherit - the port was an unused, incorrect, slow probe"
+  },
+  "defect_1_physics": {
+    "symptom": "48 of 229 rows disagreed with the numpy rhs; numpy gave exact 0.0 where the GPU gave ~1e4",
+    "pattern": "every 13 rows, the last 4 wrong - 13 = lmax_nu + 1, so it was the massive-neutrino block and specifically the top four multipoles",
+    "cause": "rhs_torch had only the base cascade and the l = lmax_nu truncation. It was missing the two masks the numpy solver gained when the neutrino switch time was corrected (commit 5b68ab7): the high_ktau demotion to lmax_nu_high_ktau (l_hi becomes the top row, everything above is pinned to zero) and the nu_free freeze above k*tau_nu = max(15, k*taurend_nu) on the accumulated conformal time.",
+    "fix": "ported both masks, using c['taurend_nu'] which to_device already uploads",
+    "result": "0 bad rows of 229 - bit-for-bit agreement with the numpy rhs"
+  },
+  "defect_2_speed": {
+    "symptom": "75 ms/step",
+    "first_attempt": "precompute kk/kk2 as a device-side table, replacing 8 _l_coeff call sites that each followed with torch.as_tensor (60+ small host-to-device transfers per step, times 4 rhs)",
+    "outcome_of_first_attempt": "no change: 74.70 ms/step, so the transfers were not the bottleneck",
+    "actual_bottleneck": "to_device is called three times per RK4 step and uploads ~18 coefficient arrays each time; that is the dominant cost at small T, and it disappears into the noise at large T because its per-call overhead is amortised"
+  },
+  "measured_at_the_size_that_matters": {
+    "T_128": {"numpy_rhs_ms": 1.29, "gpu_rhs_ms": 13.15, "rhs_speedup": 0.10},
+    "T_16384": {"numpy_rhs_ms": 59.03, "gpu_rhs_ms": 15.68, "rhs_speedup": 3.76},
+    "full_evolve_T_16384": {"seconds": 200.2, "steps": 3224, "ms_per_step": 62.08, "note": "62.08 ms/step is 4 x 15.68 ms, i.e. the four RK4 stages and nothing else - transfer overhead is fully amortised at this batch size"},
+    "reading": "T = 128 is hopeless for the GPU (10x slower); T = 16384 wins by 3.76x on rhs. matter_power reaches T = 16384 as 128 cosmologies x 128 wavenumbers, which is exactly the acceptance workload."
+  },
+  "what_this_does_not_establish": [
+    "ACCURACY: evolve_torch integrates with a FIXED step (dlna_max = 0.005, giving 3224 steps) while the numpy driver uses adaptive control and takes 8751 steps on the same trajectory. The 200 s figure is therefore not yet comparable to the numpy cost until the fixed-step accuracy is checked against the adaptive answer. Until then no end-to-end speedup may be quoted.",
+    "INTEGRATION: nothing calls the device path yet. power.matter_power still uses bucket_by_k=True (one trajectory per rhs, T=1), which the break-even table shows is the worst possible size for the GPU.",
+    "NO CUDA KERNEL: the path is torch eager on a device, not generated kernels. Whether torch eager is enough, or whether a fused Triton kernel is needed, is not yet measured."
+  ],
+  "the_architectural_point": "the two backends want opposite batching. On CPU, batching every trajectory under one step schedule is a bad trade (arithmetic volume grows ~12x for 48 k points), which is why bucket_by_k exists. On GPU the per-step cost is flat in batch size up to 16384, so the same trade becomes a 3.76x win. Batching strategy therefore has to become a per-backend property rather than a global setting.",
+  "next_steps": [
+    "check the fixed-step answer against the adaptive numpy answer at matched cost, so a real speedup can be quoted",
+    "make bucket_by_k a per-backend decision and add a batched device entry point",
+    "then compare the full nonlinear pipeline against the CPU path at 16/32/128, which is what the acceptance criterion asks for"
+  ]
+}

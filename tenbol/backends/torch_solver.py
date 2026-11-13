@@ -53,6 +53,16 @@ def rhs_torch(Y, a, layout, c, settings):
     s = settings
     k = c["k"]
     k2 = c["k2"]
+    # The eight _l_coeff call sites below each followed with torch.as_tensor on
+    # the numpy result, so every rhs re-uploaded the same constants: with four
+    # rhs per RK4 step that is dozens of host->device transfers per step, and on
+    # a T=1..128 batch it dominated everything (75 ms/step measured).  The
+    # coefficients depend only on k and l, so build them once on device.
+    _lmax_any = max(L.lmax_g, L.lmax_r, L.lmax_pol) + 1
+    _ls = torch.arange(_lmax_any + 1, dtype=Y.dtype, device=Y.device)
+    _den = 2.0 * _ls + 1.0
+    kk_tab = (k[None, :] * _ls[:, None]) / _den[:, None]
+    kk2_tab = (k[None, :] * (_ls[:, None] + 1.0)) / _den[:, None]
     h = c["h"]
     kappa = c["kappa"]
     cs2 = c["cs2"]
@@ -161,14 +171,11 @@ def rhs_torch(Y, a, layout, c, settings):
     clamp = tcu | rsa_g
     zero = torch.zeros_like(k)
     for l in range(3, L.lmax_g):
-        kk, kk2 = _l_coeff(k, l)
-        kk = torch.as_tensor(kk, dtype=Y.dtype, device=Y.device)
-        kk2 = torch.as_tensor(kk2, dtype=Y.dtype, device=Y.device)
+        kk, kk2 = kk_tab[l], kk2_tab[l]
         dY[L.fg(l)] = torch.where(
             clamp, torch.zeros_like(k),
             kk * Y[L.fg(l - 1)] - kk2 * Y[L.fg(l + 1)] - kappa * Y[L.fg(l)])
-    kk, _ = _l_coeff(k, L.lmax_g)
-    kk = torch.as_tensor(kk, dtype=Y.dtype, device=Y.device)
+    kk = kk_tab[L.lmax_g]
     dY[L.fg(L.lmax_g)] = torch.where(
         clamp, torch.zeros_like(k),
         kk * Y[L.fg(L.lmax_g - 1)]
@@ -179,15 +186,13 @@ def rhs_torch(Y, a, layout, c, settings):
     dY[L.g(2)] = torch.where(clamp, torch.zeros_like(k),
                              -kappa * (Y[L.g(2)] - polter) - k / 3.0 * Y[L.g(3)])
     for l in range(3, L.lmax_pol):
-        kk, _ = _l_coeff(k, l)
-        kk = torch.as_tensor(kk, dtype=Y.dtype, device=Y.device)
+        kk = kk_tab[l]
         polfack = (l + 3.0) * (l - 1.0) / (l + 1.0) * k
         dY[L.g(l)] = torch.where(
             clamp, torch.zeros_like(k),
             -kappa * Y[L.g(l)] + kk * Y[L.g(l - 1)] - polfack * Y[L.g(l + 1)])
     poltrunc = L.lmax_pol / max(1, L.lmax_pol - 2)
-    kk, _ = _l_coeff(k, L.lmax_pol)
-    kk = torch.as_tensor(kk, dtype=Y.dtype, device=Y.device)
+    kk = kk_tab[L.lmax_pol]
     dY[L.g(L.lmax_pol)] = torch.where(
         clamp, torch.zeros_like(k),
         -kappa * Y[L.g(L.lmax_pol)] + k * poltrunc * Y[L.g(L.lmax_pol - 1)]
@@ -196,24 +201,17 @@ def rhs_torch(Y, a, layout, c, settings):
     # ---- massless neutrinos ---------------------------------------------
     dY[L.scalar("dr")] = torch.where(rsa_r, torch.zeros_like(dr),
                                      -k * (4.0 / 3.0 * z + qr_e))
-    kk1, kk12 = _l_coeff(k, 1)
-    kk1 = torch.as_tensor(kk1, dtype=Y.dtype, device=Y.device)
-    kk12 = torch.as_tensor(kk12, dtype=Y.dtype, device=Y.device)
+    kk1, kk12 = kk_tab[1], kk2_tab[1]
     dY[L.scalar("qr")] = torch.where(rsa_r, torch.zeros_like(qr), kk1 * dr_e - kk12 * pir)
-    kk2_, kk22 = _l_coeff(k, 2)
-    kk2_ = torch.as_tensor(kk2_, dtype=Y.dtype, device=Y.device)
-    kk22 = torch.as_tensor(kk22, dtype=Y.dtype, device=Y.device)
+    kk2_, kk22 = kk_tab[2], kk2_tab[2]
     dY[L.scalar("pir")] = torch.where(
         rsa_r, torch.zeros_like(pir),
         kk2_ * qr_e - kk22 * Y[L.fr(3)] + (8.0 / 15.0) * k * sigma)
     for l in range(3, L.lmax_r):
-        kk, kk2 = _l_coeff(k, l)
-        kk = torch.as_tensor(kk, dtype=Y.dtype, device=Y.device)
-        kk2 = torch.as_tensor(kk2, dtype=Y.dtype, device=Y.device)
+        kk, kk2 = kk_tab[l], kk2_tab[l]
         dY[L.fr(l)] = torch.where(rsa_r, torch.zeros_like(k),
                                   kk * Y[L.fr(l - 1)] - kk2 * Y[L.fr(l + 1)])
-    kk, _ = _l_coeff(k, L.lmax_r)
-    kk = torch.as_tensor(kk, dtype=Y.dtype, device=Y.device)
+    kk = kk_tab[L.lmax_r]
     dY[L.fr(L.lmax_r)] = torch.where(
         rsa_r, torch.zeros_like(k),
         kk * Y[L.fr(L.lmax_r - 1)]
@@ -237,6 +235,36 @@ def rhs_torch(Y, a, layout, c, settings):
     l = L.lmax_nu
     dFnu[..., l, :] = (kb * vT * Fnu[..., l - 1, :]
                        - (l + 1) * Fnu[..., l, :] * inv_tau.reshape(1, 1, T))
+
+    # Two masks that the numpy solver has and this port did not, which is why
+    # 48 of 229 rows disagreed (numpy gave exact zeros where this gave ~1e4):
+    #
+    #  1. CAMB demotes the ladder to lmaxnu_high_ktau = 4 as soon as
+    #     k*tau > max(20, lmaxnr-4) and keeps evolving those four moments, so
+    #     l_hi becomes the top row and everything above it is pinned to zero.
+    #  2. The hierarchy freezes entirely above k*tau_nu > max(15, k*taurend_nu)
+    #     on the ACCUMULATED conformal time.  Without this the block has no sink
+    #     and the cascade runs away.
+    _zero = torch.zeros((), dtype=Y.dtype, device=Y.device)
+    ktau_t = k * tau
+    l_hi_m = min(int(s.lmax_nu_high_ktau), L.lmax_nu)
+    hi_ktau = (ktau_t > max(20.0, float(L.lmax_nu - 4))) & (k > s.rsa_kmin_r)
+    if bool(hi_ktau.any()):
+        m = hi_ktau.reshape(1, 1, 1, T)
+        dFnu[..., l_hi_m, :] = torch.where(
+            m,
+            kb * vT * Fnu[..., l_hi_m - 1, :]
+            - (l_hi_m + 1) * Fnu[..., l_hi_m, :] * inv_tau.reshape(1, 1, T),
+            dFnu[..., l_hi_m, :])
+        for ll in range(l_hi_m + 1, L.lmax_nu + 1):
+            dFnu[..., ll, :] = torch.where(m, _zero, dFnu[..., ll, :])
+    _ktau_nu = torch.maximum(
+        torch.as_tensor(float(s.rsa_ktau_nu), dtype=Y.dtype, device=Y.device),
+        k * c["taurend_nu"])
+    nu_free = (ktau_t > _ktau_nu) & (k > s.rsa_kmin_r)
+    if bool(nu_free.any()):
+        dFnu = torch.where(nu_free.reshape(1, 1, 1, T), _zero, dFnu)
+
     dY[L.offsets["Fnu"]] = dFnu.reshape(
         L.offsets["Fnu"].stop - L.offsets["Fnu"].start, T)
 
