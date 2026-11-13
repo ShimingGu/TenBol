@@ -1,0 +1,50 @@
+{
+  "question": "can a fixed step work at all for the high-k end of the workload?",
+  "method": "numpy, one trajectory at k = 5 h/Mpc (mapped to 1/Mpc through the first cosmology's h), compared against the production adaptive driver",
+  "adaptive_reference": {"n_steps": 51494, "dc": 2.0614961261e05},
+  "fixed_step_results": [
+    {"dlna": 2.0e-3, "outcome": "DIVERGED", "steps": 3578, "at_a": 1.282e-04, "seconds": 12},
+    {"dlna": 5.0e-4, "outcome": "DIVERGED", "steps": 14182, "at_a": 1.201e-04, "seconds": 47},
+    {"dlna": 1.65e-4, "outcome": "FINITE BUT WRONG", "steps": 97686, "dc": 2.2242194639e79, "rel_diff_vs_adaptive": 1.08e74, "seconds": 327}
+  ],
+  "verdict": "A FIXED STEP CANNOT WORK AT HIGH k.",
+  "the_most_important_detail": "At dlna = 1.65e-4 the run never produced a NaN - it completed 97686 steps and returned dc = 2.2e79 against the adaptive 2.1e5, i.e. wrong by 74 orders of magnitude. So 'the array is finite' is NOT evidence of convergence, and the earlier NaN-based detection was too weak: it would have passed this run. Any future check must compare against a reference, not test for NaN.",
+  "where_it_breaks": "Both divergences happen at a ~ 1.2e-4, deep in the radiation era and long before recombination. That is the regime the adaptive driver handles by shrinking its step dramatically; a uniform grid steps straight through it.",
+  "why_refining_does_not_rescue_it": "the CFL limiter in the numpy driver is a per-step, per-trajectory quantity (angular CFL, dlna_nu, event distance). Over one trajectory it spans orders of magnitude, and over a batch it would have to be global. Taking the global minimum over the whole integration is what makes the uniform step unaffordable; taking anything coarser diverges.",
+  "what_this_does_to_the_gpu_plan": {
+    "established": [
+      "rhs_torch is bit-identical to the numpy rhs (0 of 229 rows)",
+      "the GPU rhs is 3.76x faster at T=16384 and 10x slower at T=128",
+      "per-step cost is essentially FLAT from T=128 (73 ms) to T=16384 (61 ms), so batching is nearly free"
+    ],
+    "blocked": "a batched device integrator needs ONE step for all trajectories, and no single step covers k from 0.05 (needs 1.84e-3) to 5 (needs well under 1.65e-4, and the pre-recombination phase needs less still)",
+    "the_architectural_conflict_in_one_line": "GPU batching wants a single global step; the physics wants per-trajectory adaptive control spanning orders of magnitude"
+  },
+  "options_this_leaves": [
+    {
+      "option": "device-side adaptive stepping",
+      "note": "each trajectory chooses its own step inside the kernel; correct, but SIMT divergence means the batch pays the slowest member anyway unless trajectories are re-packed, and that is a substantial kernel project"
+    },
+    {
+      "option": "split the workload by k across backends",
+      "note": "low k on the batched device path, high k on the CPU. Legitimate - no physics is dropped - but the cost is dominated by high k (97627 steps against 8752), so this saves little"
+    },
+    {
+      "option": "keep the GPU work at the operator level only",
+      "note": "use the verified 3.76x rhs as a building block called from the CPU adaptive driver. That reintroduces a host sync per step, which the measurements say is exactly what kills it"
+    },
+    {
+      "option": "stop the GPU line and return to the accuracy target",
+      "note": "the 0.5% nonlinear requirement is still unmet at 0.88% (HMcode) and 4.2-6.4% (end to end), and the GPU line has not changed that number at all"
+    }
+  ],
+  "what_may_be_claimed": [
+    "rhs_torch correctness (0/229) and the 3.76x operator-level speedup at T=16384",
+    "three latent batching bugs found and fixed (coefficient dict 2051.5 MiB -> 3.6 MiB)",
+    "a negative result: fixed-step device integration cannot cover this workload"
+  ],
+  "what_may_not_be_claimed": [
+    "any end-to-end GPU speedup - the only T=16384 run was NaN, and the fine-step run at k=5 was wrong by 74 orders of magnitude",
+    "that the GPU path is close to working - it is not; the integrator scheme itself is the blocker"
+  ]
+}
