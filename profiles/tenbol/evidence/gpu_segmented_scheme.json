@@ -1,0 +1,29 @@
+{
+  "question": "was the 1.29% fixed-step floor caused by the step being too large, or by the step crossing the regime switches?",
+  "hypothesis": "if it is the switches, then splitting the integration at the precomputed switch times and taking a uniform step inside each segment should break the floor even at the same step count",
+  "method": "pure numpy, no device. Take _event_times(batch, a_start, 1.0), collect every finite crossing in (a_start, 1), sort them, and integrate segment by segment with a fixed dlna, forcing the last step of each segment to land exactly on its boundary. Compare dc/db/dg at z=0 against the production adaptive driver.",
+  "switch_points_found": [1.0e-07, 6.3939e-04, 6.4409e-04, 2.7212e-03, 2.3924e-02, 1.0],
+  "result": {
+    "segmented_dlna_0.005": {"n_steps": 3226, "max_rel_diff": 0.01383},
+    "segmented_dlna_0.002": {"n_steps": 8061, "max_rel_diff": 0.001538},
+    "unsegmented_dlna_0.005_for_comparison": {"n_steps": 3224, "max_rel_diff": 0.02198},
+    "unsegmented_dlna_0.001_for_comparison": {"n_steps": 16119, "max_rel_diff": 0.01290}
+  },
+  "verdict": "THE HYPOTHESIS HOLDS. Segmentation breaks the floor. At 8061 steps the segmented run reaches 0.154% while the unsegmented run needed 16119 steps to reach 1.290% - a factor of eight better accuracy at half the step count. And at matched step count (3226 vs 3224) segmentation already improves 2.198% -> 1.383%.",
+  "why_this_matters": {
+    "accuracy": "0.154% is inside the 0.5% requirement, so the integrator scheme is no longer the blocker it was two measurements ago",
+    "cost": "8061 steps against the adaptive driver's 8751 - no more expensive, and structurally much simpler: a pure fixed-step RK4 inside each segment",
+    "the gpu_consequence": "this is what makes a device integrator viable at all. The host now has to synchronise only at the switch points - six of them for this trajectory, order ten for a harder one - instead of deciding a step size on every one of 8751 steps. Between switches the whole batch advances on a uniform grid, which is exactly the regime where the measured 3.76x rhs speedup at T=16384 applies."
+  },
+  "the_architecture_this_unlocks": {
+    "shape": "per-batch switch times -> segment boundaries -> inside each segment, device-resident fixed-step RK4 over the full T trajectories -> one host sync per boundary",
+    "why_it_was_not_obvious": "the existing evolve_torch took a single uniform dlna over the whole a-range precisely to avoid host/device interaction, and that is what cost 2.2%. Keeping the fixed step but moving the boundaries to the switches gets both: no per-step host decision, and the accuracy back.",
+    "what_is_still_missing": "the scheme is verified in numpy only. Nothing in the device path implements it yet, so there is still no GPU speedup to quote."
+  },
+  "honest_scope": {
+    "what_was_measured": "one cosmology, one wavenumber (k = 0.05 /Mpc), three state variables, z = 0",
+    "what_was_not": "no k-dependence sweep, no other cosmology, no P(k), and no device run of the segmented scheme",
+    "status": "a verified scheme, not a delivered GPU backend"
+  },
+  "contradiction_with_the_task_list": "M2b is recorded as 'CUDA backend (generated kernels, device-resident batched evolution) + hardware validation (completed)'. Measured: git ls-files | grep -ci cuda returns 0, no module imports any backend, rhs_torch was wrong on 48 of 229 rows until fixed this session, and the shipped integrator was 2.2% inaccurate. There was no CUDA backend and no hardware validation."
+}
