@@ -1,0 +1,30 @@
+{
+  "question": "is the fixed-step device integrator accurate enough for the 200 s figure to count as a speedup?",
+  "method": "run the SAME fixed-step RK4 in numpy (no GPU at all, to remove any device confound) against the production adaptive driver, on the reference cosmology at k = 0.05 /Mpc, comparing dc, db and dg at z = 0",
+  "result": {
+    "adaptive": {"n_steps": 8751, "dc": 9446.409411738721, "db": 9413.098683375976, "dg": -0.1474863178630288},
+    "fixed_dlna_0.02": {"n_steps": 806, "max_rel_diff": 0.1164},
+    "fixed_dlna_0.005": {"n_steps": 3224, "max_rel_diff": 0.02198, "note": "this is the dlna evolve_torch currently uses"},
+    "fixed_dlna_0.001": {"n_steps": 16119, "max_rel_diff": 0.01290}
+  },
+  "verdict": "NOT ACCURATE ENOUGH. At dlna = 0.005 the fixed-step answer is off by 2.2%, which is four times the 0.5% requirement. The 200 s / 3224-step run therefore cannot be quoted as a speedup.",
+  "the_more_important_finding": {
+    "observation": "refining from 3224 to 16119 steps - a factor of five - only moves the error from 2.198% to 1.290%. It is converging to a floor near 1.3%, not to zero.",
+    "where_it_sits": "dc and db are essentially converged at dlna = 0.001 (dc = 9.4461205121e+03 against 9.446409411738721e+03, i.e. 3e-5 relative). The residual is carried almost entirely by dg, the photon density perturbation: adaptive gives -0.1474863178630288 while the finest fixed run gives -0.14558313420, a 1.3% gap.",
+    "interpretation": "this is not a step-size problem, it is a MISSING EVENT problem. The adaptive driver snaps its step to land exactly on the regime switches (tight-coupling end, radiation-streaming onset, neutrino freezes) via _event_times; a uniform grid steps straight over them, and no amount of uniform refinement recovers the correct side of the switch."
+  },
+  "the_architectural_conflict_this_exposes": {
+    "statement": "the GPU wants large batches and few host synchronisations; adaptive step control wants a host-side decision every step. Those pull in opposite directions, so swapping evolve for evolve_torch cannot work however much the fixed step is refined.",
+    "why_it_matters_for_the_speed_numbers": "the 3.76x rhs speedup at T = 16384 is real and survives, but it measures the wrong thing on its own: the device path needs event snapping before any end-to-end comparison is meaningful.",
+    "a_plausible_way_out_not_yet_implemented": "precompute the per-trajectory switch times (_event_times already exists in the numpy driver), segment the integration into the intervals between them, and take a uniform step inside each interval. Synchronisation then happens once per event (order ten to twenty per trajectory) instead of once per step (thousands), which preserves the batching advantage. This is a design, not a result - nothing of it is built or measured."
+  },
+  "what_is_actually_established_for_the_gpu_path": [
+    "rhs_torch reproduces the numpy rhs exactly: 0 of 229 state rows disagree, after porting the two missing massive-neutrino masks (high_ktau demotion and nu_free freeze)",
+    "at T = 16384 the GPU rhs is 3.76x faster than numpy (15.68 ms vs 59.03 ms)",
+    "at T = 128 the GPU rhs is 10x SLOWER (13.15 ms vs 1.29 ms), so batch size is the whole story",
+    "transfer overhead is fully amortised at T = 16384: a full evolve costs 62.08 ms/step, exactly 4 x the single rhs",
+    "the device integrator is nonetheless NOT usable, because it uses a fixed step and that costs 2.2% accuracy"
+  ],
+  "contradiction_with_the_task_list": "M2b is recorded as 'CUDA backend (generated kernels, device-resident batched evolution) + hardware validation (completed)'. Measured this session: git ls-files | grep -ci cuda returns 0, no module imports any backend, rhs_torch was wrong on 48 of 229 rows until it was fixed here, and the integrator it ships with is 2.2% inaccurate. There was no CUDA backend and no hardware validation.",
+  "not_claimed": "no speedup is claimed for the GPU path. The only speed numbers that may be quoted are the isolated rhs comparison at T = 16384 (3.76x, correct arithmetic, wrong integrator) and the previously verified 1.65x CPU optimisation (1fb5f84)."
+}
