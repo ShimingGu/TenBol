@@ -1,0 +1,22 @@
+{
+  "question": "does the segmented scheme, verified in numpy, also work on the device?",
+  "change": "evolve_torch now splits the integration at the regime switches from _event_times and takes a uniform dlna inside each segment, forcing the last step of every segment to land on the boundary. Added a dlna override so the step can be chosen per run.",
+  "measured": {
+    "adaptive_numpy": {"n_steps": 8751},
+    "gpu_segmented_dlna_0.005": {"n_steps": 3226, "segments": 5, "seconds": 243.19, "max_rel_diff": 0.01133},
+    "gpu_segmented_dlna_0.002": {"n_steps": 8061, "segments": 5, "seconds": 616.88, "max_rel_diff": 0.00111},
+    "numpy_segmented_for_comparison": {"dlna_0.005": 0.01383, "dlna_0.002": 0.00154}
+  },
+  "verdict": "THE DEVICE PATH NOW PASSES ON BOTH CORRECTNESS AND ACCURACY.",
+  "accuracy": "0.111% at dlna = 0.002, against the 0.5% requirement - a 4.5x margin. It is marginally better than the numpy segmented run at the same setting (0.154%), which is floating-point ordering, not a different scheme.",
+  "correctness": "rhs_torch is bit-identical to the numpy rhs (0 of 229 state rows disagree) after porting the two missing massive-neutrino masks, so this accuracy is not being bought by a wrong operator.",
+  "what_is_still_not_there": {
+    "speed": "616.88 s at T=1 is far slower than numpy on one trajectory, and that is expected rather than a defect: the break-even table puts T=1 at 0.08x. The device path only wins at T >= 16384, where the rhs alone measured 3.76x (15.68 ms vs 59.03 ms).",
+    "no_batched_entry_point": "nothing constructs the T=16384 batch this needs, and power.matter_power still runs bucket_by_k=True, i.e. T=1, the worst possible size.",
+    "no_end_to_end_number": "there is still no device-vs-CPU comparison of the full nonlinear pipeline, so no GPU speedup may be quoted yet.",
+    "scope_of_the_accuracy_result": "one cosmology, one wavenumber (k=0.05 /Mpc), three state variables (dc, db, dg), z=0. No k sweep and no P(k)."
+  },
+  "why_the_two_halves_now_fit": "the earlier dead end was that a single uniform grid over the whole a-range cost 2.2% and refining it hit a 1.29% floor, while adaptive control needs a host decision every step and would have destroyed GPU batching. Segmenting at the switches resolves both at once: the host synchronises once per segment (five here) instead of once per step (thousands), and inside a segment the whole batch advances on a plain fixed grid - which is exactly the regime where the measured 3.76x applies.",
+  "next_step": "build the batched entry point: assemble 128 cosmologies x 128 wavenumbers as one T=16384 batch, run the segmented device integrator over it, and compare the full nonlinear pipeline against the CPU path at 16/32/128 - that is what the acceptance criterion actually asks for.",
+  "contradiction_with_the_task_list": "M2b is recorded as 'CUDA backend (generated kernels, device-resident batched evolution) + hardware validation (completed)'. Measured: git ls-files | grep -ci cuda returns 0, no module imports any backend, rhs_torch was wrong on 48 of 229 rows until fixed this session, and the shipped integrator was 2.2% inaccurate with a fixed step over the whole range. There was no CUDA backend and no hardware validation."
+}

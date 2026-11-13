@@ -274,7 +274,7 @@ def rhs_torch(Y, a, layout, c, settings):
 
 
 def evolve_torch(batch, z_out, a_end: float = 1.0, settings=None,
-                 device=None, dtype=torch.float64):
+                 device=None, dtype=torch.float64, dlna=None):
     """Single-batch RK4 integration on ``device`` (no scaling, no events).
 
     This is a correctness/performance probe for the device path: it advances a
@@ -298,40 +298,55 @@ def evolve_torch(batch, z_out, a_end: float = 1.0, settings=None,
     rec = {key: np.full((batch.T, a_out.size), np.nan) for key in
            ("dc", "db", "dg", "dr", "vb", "qg", "qr", "etak")}
 
-    ln_a = np.log(s.a_start)
-    ln_end = 0.0
-    h = s.dlna_max
+    # Segment the integration at the regime switches.  A uniform grid over the
+    # whole range steps OVER those switches, which costs 2.2% accuracy even at
+    # 16119 steps, while landing on them gives 0.154% at 8061 (both measured, see
+    # evidence/gpu_segmented_scheme.json).  Between switches the batch advances
+    # on a plain fixed grid, so the host still synchronises once per segment
+    # rather than once per step - which is the whole point of a device backend.
+    from tenbol.physics.perturbations import _event_times
+    brk = [float(s.a_start), float(a_end)]
+    for arr in _event_times(batch, s.a_start, a_end).values():
+        for v in np.asarray(arr).ravel():
+            if np.isfinite(v) and s.a_start < v < a_end:
+                brk.append(float(v))
+    brk = sorted(set(brk))
+
+    h = dlna if dlna is not None else s.dlna_max
     next_out = np.zeros(batch.T, dtype=np.int64)
     steps = 0
-    while ln_a < ln_end - 1e-14:
-        steps += 1
-        hn = min(h, ln_end - ln_a)
-        c0 = batch.coefficients(np.exp(ln_a))
-        ct0 = to_device(c0, L, device, dtype)
-        k1 = rhs_torch(Y, None, L, ct0, s)
+    for lo, hi in zip(brk[:-1], brk[1:]):
+        ln_a = np.log(lo)
+        ln_hi = np.log(hi)
+        while ln_a < ln_hi - 1e-15:
+            steps += 1
+            hn = min(h, ln_hi - ln_a)
+            c0 = batch.coefficients(np.exp(ln_a))
+            ct0 = to_device(c0, L, device, dtype)
+            k1 = rhs_torch(Y, None, L, ct0, s)
 
-        a1 = np.exp(ln_a + 0.5 * hn)
-        ct1 = to_device(batch.coefficients(a1), L, device, dtype)
-        k2 = rhs_torch(Y + 0.5 * hn * k1, None, L, ct1, s)
+            a1 = np.exp(ln_a + 0.5 * hn)
+            ct1 = to_device(batch.coefficients(a1), L, device, dtype)
+            k2 = rhs_torch(Y + 0.5 * hn * k1, None, L, ct1, s)
 
-        a2 = np.exp(ln_a + 0.5 * hn)
-        k3 = rhs_torch(Y + 0.5 * hn * k2, None, L, ct1, s)
+            k3 = rhs_torch(Y + 0.5 * hn * k2, None, L, ct1, s)
 
-        a3 = np.exp(ln_a + hn)
-        ct3 = to_device(batch.coefficients(a3), L, device, dtype)
-        k4 = rhs_torch(Y + hn * k3, None, L, ct3, s)
+            a3 = np.exp(ln_a + hn)
+            ct3 = to_device(batch.coefficients(a3), L, device, dtype)
+            k4 = rhs_torch(Y + hn * k3, None, L, ct3, s)
 
-        Y = Y + (hn / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
-        ln_a += hn
+            Y = Y + (hn / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+            ln_a += hn
 
-        # record at requested outputs (nearest step; this probe is not the
-        # production dense-output path)
-        a_now = np.exp(ln_a)
-        while next_out[0] < a_out.size and a_out[next_out[0]] <= a_now:
-            j = int(next_out[0])
-            f = Y.detach().cpu().numpy()
-            for key in rec:
-                rec[key][:, j] = f[L.scalar(key)]
-            next_out[0] += 1
+            # record at requested outputs (nearest step; this probe is not the
+            # production dense-output path)
+            a_now = np.exp(ln_a)
+            while next_out[0] < a_out.size and a_out[next_out[0]] <= a_now:
+                j = int(next_out[0])
+                f = Y.detach().cpu().numpy()
+                for key in rec:
+                    rec[key][:, j] = f[L.scalar(key)]
+                next_out[0] += 1
     rec["n_steps"] = steps
+    rec["segments"] = len(brk) - 1
     return rec
