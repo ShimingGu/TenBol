@@ -239,8 +239,8 @@
     "total_spectrum_omega_nu_0": {"max_abs_dev": 0.06419, "ratios_k_0.1_0.5_1_2_4": [1.0085, 0.9965, 0.9863, 0.9757, 0.9483]},
     "cold_spectrum_omega_nu_true": {"max_abs_dev": 0.06297, "ratios_k_0.1_0.5_1_2_4": [1.0452, 1.0343, 1.0218, 1.0021, 0.9667]},
     "verdict": "MIXED. High k improves (5.2% deficit -> 3.3% at k=4) but mid/low k gets 3-4pp worse. Net max|dev| 6.42% -> 6.30%, unchanged.",
-    "the_bigger_finding": "both numbers are ~6.4% against 1.40% measured earlier for the same cosmology with CAMB's 16384-point spectrum. Grid density dominates both candidates, so this comparison is compressed against a 6.4% floor and cannot decide the question.",
-    "status": "cold-spectrum change (30afb7d) remains UNVERIFIED. Do not quote an improvement for it."
+    "the_bigger_finding_RETRACTED": "This first read 'grid density dominates, the comparison sits on a 6.4% floor'. The 128-point rerun moved the number by 0.1pp (6.42% -> 6.33% total, 6.30% -> 6.36% cold), so that read was WRONG. The ~6% is a real end-to-end error whose source is the linear spectrum, and the 1.40% it was being compared against is HMcode fed CAMB's OWN spectrum - a different quantity entirely. See n128_end_to_end.json.",
+    "status": "cold-spectrum change (30afb7d) remains UNVERIFIED. At 128 points it helps 0.35pp at f_nu = 0.0045 (4.56% -> 4.21%) and costs 0.03pp at f_nu = 0.022 (6.33% -> 6.36%): mixed and small, no improvement claimable."
   },
 
   "neutrino_facts_established": [

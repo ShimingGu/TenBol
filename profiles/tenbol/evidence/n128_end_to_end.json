@@ -1,0 +1,39 @@
+{
+  "purpose": "128-point end-to-end run, the measurement the 1.65x speedup was for: settle the cold-spectrum question and get an end-to-end number on a grid where HMcode sees a real spectrum",
+  "setup": "our solver on np.geomspace(1e-3, 5.0, 128), two cosmologies (sum m_nu = 0.06 and 0.30 eV), each compared against CAMB mead2020 on a 16384-point spectrum, wall time 6166 s and 6655 s",
+  "results": {
+    "mnu_0.06": {
+      "f_nu": 0.00451,
+      "total_spectrum_omega_nu_0": {"max_abs_dev": 0.04558, "at_k": 5.0, "ratios_0.1_0.3_0.5_1_2_4": [1.0171, 1.0094, 1.0088, 1.0067, 0.9976, 0.9687]},
+      "cold_spectrum_omega_nu_true": {"max_abs_dev": 0.04207, "at_k": 5.0, "ratios_0.1_0.3_0.5_1_2_4": [1.0250, 1.0172, 1.0167, 1.0141, 1.0030, 0.9725]}
+    },
+    "mnu_0.30": {
+      "f_nu": 0.02215,
+      "total_spectrum_omega_nu_0": {"max_abs_dev": 0.06332, "at_k": 5.0, "ratios_0.1_0.3_0.5_1_2_4": [1.0091, 0.9915, 0.9861, 0.9793, 0.9723, 0.9495]},
+      "cold_spectrum_omega_nu_true": {"max_abs_dev": 0.06363, "at_k": 0.031, "ratios_0.1_0.3_0.5_1_2_4": [1.0458, 1.0284, 1.0236, 1.0146, 0.9985, 0.9679]}
+    }
+  },
+  "correction_to_an_earlier_claim": {
+    "wrong_claim": "the 6.4% seen on the 32-point grid was grid error, and the comparison was compressed against a 6.4% floor",
+    "why_it_was_wrong": "quadrupling the grid to 128 points moves the number by almost nothing - m_nu=0.30 goes 6.42% -> 6.33% (total) and 6.30% -> 6.36% (cold). So the ~6% is a real end-to-end error, not a grid artifact.",
+    "how_the_confusion_arose": "the 1.40% figure it was compared against is HMcode fed CAMB's own spectrum, i.e. HMcode's intrinsic error. The 6.4% here is HMcode fed OUR spectrum. Those are different quantities and the comparison was invalid.",
+    "status": "the corrected statement supersedes the earlier one; treating 6.4% as a grid floor is retired"
+  },
+  "what_this_establishes": {
+    "end_to_end_error": "4.2% to 6.4%, against the 0.5% requirement",
+    "where_it_comes_from": "the end-to-end number tracks the linear-spectrum deviation almost one for one, so HMcode's response to its input is close to linear and the LINEAR spectrum is the bottleneck - not HMcode (0.88% on a dense CAMB spectrum) and not grid density",
+    "consistency_with_the_earlier_breakdown": "the earlier 3.50% end-to-end figure decomposed as 0.88pp from HMcode plus ~2.6pp from our linear input; this run says the same thing more starkly, with the linear input carrying essentially all of a 4-6% budget"
+  },
+  "cold_spectrum_final_verdict": {
+    "mnu_0.06": {"total": 0.04558, "cold": 0.04207, "delta": -0.0035, "verdict": "slightly better"},
+    "mnu_0.30": {"total": 0.06332, "cold": 0.06363, "delta": 0.0003, "verdict": "slightly worse"},
+    "overall": "MIXED and small. It helps by 0.35pp at f_nu = 0.0045 and costs 0.03pp at f_nu = 0.022. No improvement can be claimed. Commit 30afb7d stays UNVERIFIED in the sense of 'not shown to help', and the change is small enough that either choice is defensible on this evidence.",
+    "shape_note": "at m_nu = 0.30 the cold spectrum trades a high-k deficit for a low-k excess: k=4 goes 0.9495 -> 0.9679 (better) while k=0.1 goes 1.0091 -> 1.0458 (worse), and the max|dev| location moves from k=5 to k=0.031"
+  },
+  "caveat_about_this_scripts_linear_column": {
+    "what_it_prints": "linear max|dev| = 0.0354 (m_nu=0.06) and 0.0638 (m_nu=0.30)",
+    "why_it_cannot_be_read_as_linear_error": "the ratio computed is p_cold_ours / CAMB_pk_lin, and CAMB's pk_lin is the TOTAL matter spectrum. So the number mixes our numerical error with the genuine physical difference between the cold and total spectra, which grows with f_nu. It is not a numerical accuracy measure.",
+    "the_real_linear_number": "still the previously measured median +0.17% from delta_m against CAMB's delta_tot"
+  },
+  "cost": "6166 s and 6655 s for the two cosmologies, 128 k points each, at 1.65x faster than before the optimisation - so this class of experiment costs roughly 1.7 hours with the current solver"
+}
