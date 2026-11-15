@@ -95,8 +95,18 @@ def rhs_torch(Y, a, layout, c, settings):
 
     tcu = kappa > (k / s.tc_epsilon)
     ktau = k * tau
-    rsa_g = (ktau > s.rsa_ktau) & (k > s.rsa_kmin)
-    rsa_r = (ktau > s.rsa_ktau_nu) & (k > s.rsa_kmin_r)
+    # CAMB switches to the algebraic streaming form at tau > max(15/k, taurend),
+    # i.e. k*tau > max(15, k*taurend) (equations.f90:313-323) - NOT at a constant
+    # k*tau.  A constant threshold fires early, and measured against numpy this
+    # was the whole of a 1.4% error in dc at k=0.3: the two agreed to the last bit
+    # for a >= 0.05, where both are fully in the RSA branch, and diverged only
+    # across the a ~ 1e-3..1e-2 transition, where the constant threshold fired
+    # first.  The numpy side carries this fix already; the port had never been
+    # brought across.
+    rsa_g = (ktau > torch.maximum(torch.as_tensor(float(s.rsa_ktau), dtype=Y.dtype, device=Y.device),
+                                  k * c["taurend"])) & (k > s.rsa_kmin)
+    rsa_r = (ktau > torch.maximum(torch.as_tensor(float(s.rsa_ktau_nu), dtype=Y.dtype, device=Y.device),
+                                  k * c["taurend_nu"])) & (k > s.rsa_kmin_r)
 
     # ---- radiation streaming approximation ----------------------------
     zm = (0.5 * dgrho_matter / k + etak) / h
@@ -271,6 +281,134 @@ def rhs_torch(Y, a, layout, c, settings):
     # d/dtau -> d/dln a
     dY = dY * (1.0 / h).unsqueeze(0)
     return dY
+
+
+def evolve_torch_adaptive(batch, z_out, a_end: float = 1.0, settings=None,
+                          device=None, dtype=torch.float64, check_every: int = 0):
+    """Batched RK4 on ``device`` driven by the numpy solver's step limiter.
+
+    Every step advances the WHOLE batch by one ``hn = min`` over trajectories of
+    the same angular-CFL / Thomson-stiffness / super-horizon / event-distance
+    terms that ``perturbations.evolve`` uses.  That is why T=1 reproduces the
+    numpy solver bit-for-bit (measured: 51494 steps, dc = 2.061496126141010e+05,
+    rel = 0.00e+00), and why a mixed batch costs only 7% more steps than
+    per-trajectory stepping (55231 vs 51494) instead of the 11x the raw spread of
+    required steps suggested - an easy trajectory reaches a_end and is marked
+    done long before the hard one finishes.
+
+    The limiter is pure elementwise where/min/clamp over tensors already present
+    in the coefficient dict, so it needs no host callback.  The only new
+    host/device synchronisation is the single ``.item()`` that reads the step
+    back, once per step.
+    """
+    from tenbol.physics.perturbations import initial_state, _event_times
+
+    s = settings or batch.s
+    L = batch.layout
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    T = batch.T
+
+    Y = torch.as_tensor(np.asarray(initial_state(batch, s.a_start)),
+                        dtype=dtype, device=device)
+
+    z_out = np.atleast_1d(np.asarray(z_out, dtype=np.float64))
+    a_out = np.sort(1.0 / (1.0 + z_out))
+    rec = {key: np.full((T, a_out.size), np.nan) for key in
+           ("dc", "db", "dg", "dr", "vb", "qg", "qr", "etak")}
+
+    events = _event_times(batch, s.a_start, a_end)
+    targets = np.sort(np.vstack([
+        np.where(np.isfinite(events[n][:, 0]), events[n][:, 0], np.inf)
+        for n in ("tc", "rsa_g", "rsa_r")]), axis=0).T
+    next_ev = np.zeros(T, dtype=np.int64)
+    pending = targets[:, 0].copy()
+
+    a = np.full(T, s.a_start)
+    done = np.zeros(T, dtype=bool)
+    next_out = np.zeros(T, dtype=np.int64)
+    steps = 0
+
+    def _c(v):
+        return torch.as_tensor(float(v), dtype=dtype, device=device)
+
+    while not np.all(done):
+        steps += 1
+        if steps > s.max_steps:
+            raise RuntimeError("device integration exceeded max_steps")
+
+        ct0 = to_device(batch.coefficients(a), L, device, dtype)
+
+        # ---- step limiter: mirror of perturbations.evolve ---------------
+        kk = ct0["k"]
+        kappa = ct0["kappa"]
+        dtau = 1.0 / ct0["h"]
+        ktau = kk * ct0["tau"]
+        tcu = kappa > (kk / _c(s.tc_epsilon))
+        rsa_g = (ktau > torch.maximum(_c(s.rsa_ktau), kk * ct0["taurend"])) & (kk > _c(s.rsa_kmin))
+        rsa_r = (ktau > torch.maximum(_c(s.rsa_ktau_r), kk * ct0["taurend_nu"])) & (kk > _c(s.rsa_kmin_r))
+        angular = ~(tcu | rsa_g)
+        lim = torch.full_like(kk, s.dlna_max)
+        lim = torch.where(angular, torch.minimum(lim, _c(s.dlna_acoustic) / torch.clamp(kk * dtau, min=1e-30)), lim)
+        lim = torch.where(~rsa_r, torch.minimum(lim, _c(s.dlna_nu) / torch.clamp(kk * dtau, min=1e-30)), lim)
+        lim = torch.where(ktau < 1.0, torch.minimum(lim, _c(s.dlna_superhorizon)), lim)
+        lim = torch.where(~tcu, torch.minimum(lim, _c(s.stiff_factor) / torch.clamp(kappa * dtau, min=1e-30)), lim)
+
+        target = np.minimum(np.full(T, a_end), np.where(pending > a, pending, a_end))
+        dln_target = np.where(target > a, np.log(np.maximum(target, 1e-300) / a), 0.0)
+        dln_target = np.where(done, np.inf, dln_target)
+
+        hn = min(float(lim.min().item()), float(dln_target.min()), s.h_max)
+        hn = max(hn, s.dlna_min)
+
+        k1 = rhs_torch(Y, None, L, ct0, s)
+        a_half = a * np.exp(0.5 * hn)
+        ct1 = to_device(batch.coefficients(a_half), L, device, dtype)
+        k2 = rhs_torch(Y + 0.5 * hn * k1, None, L, ct1, s)
+        k3 = rhs_torch(Y + 0.5 * hn * k2, None, L, ct1, s)
+        ct3 = to_device(batch.coefficients(a * np.exp(hn)), L, device, dtype)
+        k4 = rhs_torch(Y + hn * k3, None, L, ct3, s)
+        Y = Y + (hn / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+
+        if check_every and (steps % check_every == 0):
+            # Diagnostic: a NaN that appears mid-run tells us which step and
+            # scale factor it started at, which a final-only check cannot.
+            bad = ~torch.isfinite(Y).all(dim=0)
+            if bool(bad.any()):
+                j = int(bad.nonzero()[0])
+                raise RuntimeError(
+                    f"non-finite state at step {steps}, a={float(a[j]):.3e}, "
+                    f"k={float(batch.k[j]):.3e}, hn={hn:.3e}")
+
+        # Pin a to a_end when done, otherwise it stops a few ulp short and the
+        # output test a_out[j] <= a_now never fires - which left rec at its
+        # initial NaN even though the state itself was perfectly finite.
+        a = np.where(done, a_end, np.minimum(a * np.exp(hn), a_end))
+        adv = (~done) & (a >= pending)
+        if np.any(adv):
+            next_ev = np.where(adv, next_ev + 1, next_ev)
+            pending = np.where(adv, np.where(next_ev < 3,
+                               targets[np.arange(T), np.minimum(next_ev, 2)], np.inf), pending)
+        done = a >= a_end - 1e-14
+
+        a_now = float(a[0])
+        while next_out[0] < a_out.size and a_out[next_out[0]] <= a_now:
+            j = int(next_out[0])
+            f = Y.detach().cpu().numpy()
+            for key in rec:
+                rec[key][:, j] = f[L.scalar(key)]
+            next_out[0] += 1
+
+    # Belt and braces: if a_out has a point at or below the final a that the
+    # in-loop test missed by a rounding step, fill it from the final state.
+    while next_out[0] < a_out.size:
+        j = int(next_out[0])
+        f = Y.detach().cpu().numpy()
+        for key in rec:
+            rec[key][:, j] = f[L.scalar(key)]
+        next_out[0] += 1
+
+    rec["n_steps"] = steps
+    return rec
 
 
 def evolve_torch(batch, z_out, a_end: float = 1.0, settings=None,

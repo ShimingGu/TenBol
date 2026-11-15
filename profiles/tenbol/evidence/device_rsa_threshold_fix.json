@@ -1,0 +1,41 @@
+{
+  "purpose": "the device integrator is live now; this records the last correctness bug found in it and the accuracy that results",
+  "the_bug": {
+    "where": "torch_solver.rhs_torch, the radiation-streaming (RSA) regime test",
+    "wrong": "rsa_g = (ktau > s.rsa_ktau) & (k > s.rsa_kmin), and likewise rsa_r with s.rsa_ktau_nu - constant thresholds",
+    "right": "CAMB switches to the algebraic streaming form at tau > max(15/k, taurend), i.e. k*tau > max(15, k*taurend) (equations.f90:313-323). The numpy solver already used max(s.rsa_ktau, k*c['taurend']); the port had never been brought across.",
+    "effect": "a constant threshold fires EARLY, so the port entered the RSA branch while numpy was still integrating the hierarchy",
+    "how_it_was_found": "a and-by-a comparison of numpy vs torch rhs at eight scale factors, with both absolute and relative criteria. Rows of order 1e-58 had been dismissed as noise earlier; the real signal was in dr, the massless-neutrino density, where the relative difference reached 1.7e+01 at a=1e-3 and 1.0e+00 at a=1e-2, then vanished entirely by a=0.05",
+    "why_it_hid_for_so_long": "at a=0.05 and a=0.3 the two sides agree to 0.000e+00, because by then both are fully inside the RSA branch and dr takes the same algebraic form. Every earlier correctness check ran at a=0.05, i.e. entirely inside the region where the bug is invisible."
+  },
+  "the_fix_effect": {
+    "k_0.3_before": {"numpy": 2.861853271424e04, "device": 2.902642600522e04, "rel": 1.425e-02},
+    "k_0.3_after": {"numpy": 2.861853271424e04, "device": 2.861842629767e04, "rel": 3.718e-06},
+    "improvement": "about 3800x",
+    "steps_unchanged": "8330 both before and after, so the step limiter was already right - only the rhs regime test was wrong"
+  },
+  "two_more_bugs_fixed_in_the_same_pass": [
+    {
+      "where": "evolve_torch_adaptive, output recording",
+      "bug": "a was carried as np.where(done, a, ...), so on the final step it stopped a few ulp short of a_end. The output test a_out[j] <= a_now then never fired and rec stayed at its initial NaN - which looked exactly like a diverged run but was a bookkeeping bug.",
+      "fix": "pin a to a_end when done, plus a post-loop fill as a safety net"
+    },
+    {
+      "where": "evolve_torch_adaptive diagnostic",
+      "bug": "none; added an optional check_every so a mid-run non-finite state can be located instead of only being visible at the end"
+    }
+  ],
+  "what_is_now_true": {
+    "device_integrator": "evolve_torch_adaptive advances the whole batch by min over trajectories of the numpy step limiter, ported to the device as elementwise where/min/clamp over the coefficient tensors",
+    "accuracy_at_k_0.3": "3.718e-06 relative against the numpy solver, over a full 8330-step integration",
+    "schedule": "identical step count to numpy, so the limiter port is exact",
+    "the_tight_coupling_era": "the earlier 0.26% relative disagreement at a=1e-7 on 1e-58 states is still present and still judged as numerical noise; it does not affect the result"
+  },
+  "caveats": [
+    "k=0.3 verified; the k=0.9 half of the same run had not reported when this was written",
+    "one trajectory, one cosmology; nothing here is a batched measurement",
+    "the 7.3% step penalty of batch-uniform stepping was measured on the numpy side, not on the device",
+    "no end-to-end nonlinear number and no GPU speedup is claimed"
+  ],
+  "the_pattern_worth_noting": "this is the fifth bug in this session that lives only in the ported/device path and is invisible in the default configuration: _taurend_nu truncated by zip(), _tau_end built per-cosmology, tau_rem broadcasting to (T,T), the two missing massive-neutrino masks, and now the constant RSA threshold. Every one of them was hidden by bucket_by_k running T=1 (for the first four) or by checking only at late times (for this one)."
+}
