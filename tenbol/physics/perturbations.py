@@ -674,7 +674,8 @@ def _hermite(Y0, Y1, f0, f1, delta, theta):
 
 
 def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
-           settings: "PerturbationSettings | None" = None):
+           settings: "PerturbationSettings | None" = None,
+           uniform_step: bool = False):
     """Integrate the dense state tensor with a fixed physics-based RK4 schedule.
 
     The schedule combines the angular CFL (``k*dtau``), the Thomson stiffness
@@ -761,6 +762,13 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
         h = np.minimum(np.minimum(np.reshape(lim, (T,)), np.reshape(dln_target, (T,))),
                        s.h_max)
         h = np.broadcast_to(h, (T,)).astype(np.float64, copy=True)
+        if uniform_step and np.any(~done):
+            # A device backend advances the whole batch by ONE step, so that
+            # step must be the smallest any trajectory needs.  Doing the min
+            # here rather than in a reimplementation keeps the rest of the
+            # schedule identical, and makes T=1 reduce to the per-trajectory
+            # case exactly - which is how this is validated.
+            h = np.full(T, float(h[~done].min()))
         h = np.maximum(h, s.dlna_min)
         h = np.where(done, 0.0, h)
 

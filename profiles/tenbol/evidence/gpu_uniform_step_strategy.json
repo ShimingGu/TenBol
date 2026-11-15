@@ -1,0 +1,35 @@
+{
+  "question": "if a device backend must advance the whole batch by ONE step, does taking the minimum any trajectory needs reproduce the per-trajectory answer, and what does it cost?",
+  "method": "added an optional uniform_step switch to the production evolve(). It changes ONE line: after the per-trajectory limit is computed, h is replaced by min over the unfinished trajectories. Everything else - the CFL terms, event landing, RK4 - is the same code, so any difference is the strategy and not a reimplementation. (An earlier hand-written reimplementation disagreed by 19.7% at T=1, which turned out to be a bug in the copy, not in the strategy.)",
+  "results": {
+    "T_1_k5_adaptive": {"n_steps": 51494, "dc": 2.061496126141010e05, "seconds": 182},
+    "T_1_k5_uniform": {"n_steps": 51494, "dc": 2.061496126141010e05, "seconds": 182},
+    "T_1_bit_identical": true,
+    "T_2_per_trajectory": {"n_steps": 51494, "seconds": 188, "dc": [6066.41383421, 206149.61520696]},
+    "T_2_uniform": {"n_steps": 55231, "seconds": 201, "dc": [6066.76988803, 206150.94662211]},
+    "T_2_relative_difference": [5.87e-05, 6.46e-06],
+    "T_2_finite": true
+  },
+  "verdict": "THE STRATEGY WORKS AND IS CHEAP.",
+  "why_T_1_matters": "at T=1 'min over the batch' is just the trajectory's own limit, so the two runs must agree exactly. They do - bit-for-bit, rel = 0.00e+00. That establishes the switch does not perturb the schedule, so the T=2 numbers measure the strategy rather than an artefact.",
+  "the_cost_is_far_smaller_than_predicted": {
+    "prediction": "I expected the k=0.05 trajectory to be dragged from 8752 steps to the k=5 cost of 51494, i.e. a large penalty",
+    "measured": "55231 steps against 51494 - only 7.3% more",
+    "why": "an easy trajectory reaches a_end and is marked done long before the hard one finishes, so it stops consuming steps. The batch pays only for the synchronisation between different limiter regimes, not for the full spread of the workload."
+  },
+  "accuracy": "5.87e-05 and 6.46e-06 relative on the two trajectories, against the 0.5% requirement - three orders of magnitude of margin.",
+  "projected_cost_at_the_acceptance_batch": {
+    "steps": 55231,
+    "ms_per_step_at_T_16384": 61.19,
+    "gpu_wall_time": "~56 minutes",
+    "cpu_comparison": "~4.3 h single-core for 128 k x 128 cosmologies (sum of per-k step counts times the measured ~6 ms/step at T=128)",
+    "ratio": "~4.6x in the GPU's favour"
+  },
+  "honest_scope": [
+    "the projection is arithmetic from measured per-step cost and the measured step count at T=2 - the T=16384 run has NOT been executed",
+    "the strategy is verified in numpy only; nothing in the device path implements it yet",
+    "two trajectories, one cosmology; the 7.3% penalty could grow with more diverse step regimes in the batch",
+    "the CPU comparison figure is an estimate, not a measured baseline (no CAMB-vs-tenbol baseline exists, see M3)"
+  ],
+  "what_this_unblocks": "the device integrator no longer needs a fixed step. Porting the limiter to the device (it is pure elementwise where/min/clamp over tensors already present in the coefficient dict) gives a correct batched integrator, which is the thing the fixed-step attempts could not deliver."
+}
