@@ -1,0 +1,233 @@
+{
+  "baseline_commit": "79c9550",
+  "reference": "CAMB 2.0.5 with the workload manifest settings",
+  "device": "NVIDIA H100 NVL MIG 1g.12gb",
+  "workload": {
+    "seed": 20261106,
+    "cosmologies": 8,
+    "k_output_h_mpc": {
+      "min": 0.0001,
+      "max": 10.0,
+      "points": 256
+    },
+    "k_solver_h_mpc": {
+      "min": 0.0001,
+      "max": 20.0,
+      "points": 128
+    },
+    "redshifts": [
+      0.0,
+      0.5,
+      1.0,
+      2.0
+    ]
+  },
+  "nonlinear_accuracy_and_initial_timing_pair": {
+    "before": {
+      "wall_seconds": 32.89864672999829,
+      "phases": {
+        "background": 7.975517755003239,
+        "cuda_solver": 24.540277630003402
+      },
+      "max_rel": 0.144012780540413,
+      "per_cosmology_max": [
+        0.04047055659264154,
+        0.038498494295284624,
+        0.03515786333334958,
+        0.03630148706575609,
+        0.04411233689897909,
+        0.05804773488958892,
+        0.144012780540413,
+        0.03793669376559872
+      ],
+      "worst": {
+        "cosmology": 6,
+        "k": 1.7190722018585747,
+        "z": 2.0,
+        "signed_error": 0.144012780540413
+      }
+    },
+    "after": {
+      "wall_seconds": 35.548445000000356,
+      "phases": {
+        "background": 8.053996444999939,
+        "cuda_solver": 27.316811450000387
+      },
+      "max_rel": 0.0405764375337907,
+      "per_cosmology_max": [
+        0.02363700378775213,
+        0.010322979000851662,
+        0.014135972457714474,
+        0.020852137455113162,
+        0.03877853753197513,
+        0.0405764375337907,
+        0.031341930812536334,
+        0.011797588744966392
+      ],
+      "worst": {
+        "cosmology": 5,
+        "k": 3.2344759148768216,
+        "z": 2.0,
+        "signed_error": -0.0405764375337907
+      }
+    },
+    "after_with_camb_linear": {
+      "max_rel": 0.004310673422235678,
+      "per_cosmology_max": [
+        0.002444983406499568,
+        0.0026040284597775853,
+        0.0021342536634977316,
+        0.0015866194403408862,
+        0.0023534259095876475,
+        0.0031230901711770676,
+        0.004310673422235678,
+        0.0019588806854815566
+      ],
+      "worst": {
+        "cosmology": 6,
+        "k": 0.2824752438059112,
+        "z": 2.0,
+        "signed_error": -0.004310673422235678
+      }
+    }
+  },
+  "balanced_timing": {
+    "order": [
+      "after",
+      "before",
+      "before",
+      "after"
+    ],
+    "scope": "Warm CUDA context, freshly built background and thermal history on each call",
+    "runs": {
+      "before": [
+        {
+          "wall_seconds": 36.03379661499639,
+          "phases": {
+            "background": 7.836806631006766,
+            "cuda_solver": 27.81500045100256
+          }
+        },
+        {
+          "wall_seconds": 32.8607755349949,
+          "phases": {
+            "background": 7.843467708000389,
+            "cuda_solver": 24.634869675996015
+          }
+        }
+      ],
+      "after": [
+        {
+          "wall_seconds": 32.51257724899915,
+          "phases": {
+            "background": 7.790069557006063,
+            "cuda_solver": 24.549088417996245
+          }
+        },
+        {
+          "wall_seconds": 35.75849508400279,
+          "phases": {
+            "background": 7.811219780000101,
+            "cuda_solver": 27.773577284002386
+          }
+        }
+      ]
+    },
+    "median_wall_seconds": {
+      "before": 34.447286074995645,
+      "after": 34.13553616650097
+    }
+  },
+  "parameter_corners": {
+    "cosmologies": [
+      {
+        "h": 0.6,
+        "omega_b": 0.02,
+        "omega_c": 0.1,
+        "A_s": 1.5e-09,
+        "n_s": 0.92,
+        "m_nu_sum": 0.3,
+        "N_eff": 3.046,
+        "T_cmb": 2.7255,
+        "num_massive": 1,
+        "pivot_k": 0.05
+      },
+      {
+        "h": 0.8,
+        "omega_b": 0.0245,
+        "omega_c": 0.16,
+        "A_s": 2.7e-09,
+        "n_s": 1.02,
+        "m_nu_sum": 0.3,
+        "N_eff": 3.046,
+        "T_cmb": 2.7255,
+        "num_massive": 1,
+        "pivot_k": 0.05
+      },
+      {
+        "h": 0.6,
+        "omega_b": 0.0245,
+        "omega_c": 0.16,
+        "A_s": 2.1e-09,
+        "n_s": 0.965,
+        "m_nu_sum": 0.06,
+        "N_eff": 3.046,
+        "T_cmb": 2.7255,
+        "num_massive": 1,
+        "pivot_k": 0.05
+      },
+      {
+        "h": 0.8,
+        "omega_b": 0.02,
+        "omega_c": 0.1,
+        "A_s": 2.1e-09,
+        "n_s": 0.965,
+        "m_nu_sum": 0.06,
+        "N_eff": 3.046,
+        "T_cmb": 2.7255,
+        "num_massive": 1,
+        "pivot_k": 0.05
+      }
+    ],
+    "before": {
+      "wall_seconds": 27.244174340004975,
+      "phases": {
+        "background": 4.2271059100021375,
+        "cuda_solver": 22.757549191999715
+      },
+      "max_rel": 0.066308720864664,
+      "per_cosmology_max": [
+        0.066308720864664,
+        0.04100099317557926,
+        0.030331930943871654,
+        0.03952432995376842
+      ],
+      "worst": {
+        "cosmology": 0,
+        "k": 1.4350358313889462,
+        "z": 2.0,
+        "signed_error": 0.066308720864664
+      }
+    },
+    "after": {
+      "wall_seconds": 23.38405659199634,
+      "phases": {
+        "background": 3.845631443000457,
+        "cuda_solver": 19.44953424000414
+      },
+      "max_rel": 0.08725972922259795,
+      "per_cosmology_max": [
+        0.08725972922259795,
+        0.02598238745636805,
+        0.01036648720276534,
+        0.012065554107958398
+      ],
+      "worst": {
+        "cosmology": 0,
+        "k": 5.817091329374358,
+        "z": 2.0,
+        "signed_error": -0.08725972922259795
+      }
+    }
+  }
+}

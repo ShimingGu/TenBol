@@ -22,8 +22,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+from scipy.integrate import cumulative_simpson
 from scipy.interpolate import CubicSpline
-from scipy.special import sici
+from scipy.special import hyp2f1, sici
 
 from tenbol.constants import T_CMB0_DEFAULT
 
@@ -53,6 +54,7 @@ KMAX_WIGGLE = 5.0
 NK_WIGGLE = 512
 WIGGLE_SIGMA = 0.25       # Gaussian width in ln k
 KNORM_NOWIGGLE = 0.03     # no-wiggle spectrum is pinned to the linear one here
+SIGMA_K_MAX = 1.0e3      # h/Mpc, upper end of the variance quadrature
 
 
 @dataclass
@@ -85,8 +87,11 @@ class HMcode2020:
     n_s : float
         Scalar spectral index (used to clip the effective spectral index).
     k_lin, p_lin : ndarray
-        Linear power at the *tabulation* redshift (usually z=0), ``k`` in
-        h/Mpc and ``P`` in ``(Mpc/h)^3``, increasing and strictly positive.
+        Wavenumbers in h/Mpc and total linear power in (Mpc/h)^3, divided by
+        the squared growth factor at the target redshift.
+    p_cold : ndarray or None
+        Cold linear power on the same grid and with the same normalization.
+        Defaults to the supplied total spectrum.
     growth : callable
         ``growth(a) -> D(a)`` normalised to ``D(1) = 1``.
     z : float
@@ -104,6 +109,8 @@ class HMcode2020:
     growth: object
     z: float = 0.0
     terms: object = None
+    p_cold: np.ndarray | None = None
+    t_cmb: float = T_CMB0_DEFAULT
     params: HMParameters = field(init=False)
 
     def __post_init__(self) -> None:
@@ -122,15 +129,20 @@ class HMcode2020:
         self.k_lin = self.k_lin[order]
         self.p_lin = self.p_lin[order]
 
-        # Linear spectrum interpolator in (ln k, ln P); the linear input is the
-        # cold-matter spectrum scaled by T_cb/T_cbnu**2 when neutrinos are present.
         self._lnk = np.log(self.k_lin)
         self._spl = CubicSpline(self._lnk, np.log(self.p_lin), extrapolate=True)
+        cold = self.p_lin if self.p_cold is None else np.asarray(self.p_cold)[order]
+        self._spl_cold = CubicSpline(self._lnk, np.log(cold), extrapolate=True)
 
-        # Cold-matter linear spectrum (used for sigma_cold); with massless
-        # neutrinos only it equals the total one.
-        self._lnp_cold = np.log(self.p_lin)
-        self._spl_cold = CubicSpline(self._lnk, self._lnp_cold, extrapolate=True)
+        # Halo formation uses sigma(R) at radii much smaller than the output
+        # wavelengths. Continue the short-wavelength power law for this
+        # integral on the host, without extrapolating a cubic spline or
+        # evolving more Boltzmann modes.
+        self._sigma_lnk = self._lnk
+        if self.k_lin[-1] < SIGMA_K_MAX:
+            tail = np.linspace(self._lnk[-1], np.log(SIGMA_K_MAX), 42)[1:]
+            self._sigma_lnk = np.concatenate((self._lnk, tail))
+        self._sigma_k = np.exp(self._sigma_lnk)
 
         self._build_tables()
         self._build_wiggle()
@@ -148,18 +160,24 @@ class HMcode2020:
     # -- sigma(R) --------------------------------------------------------
     def _sigma_r(self, r, cold=True):
         """``sigma(R)`` at the tabulation redshift, from the linear spectrum."""
-        lnk = self._lnk
-        integrand = self._delta2(self.k_lin, cold=cold)      # = k^3 P / 2pi^2
+        spl = self._spl_cold if cold else self._spl
+        log_p = spl(self._lnk)
+        if self._sigma_lnk.size > self._lnk.size:
+            anchor = max(0, log_p.size - 5)
+            slope = (log_p[-1] - log_p[anchor]) / (self._lnk[-1] - self._lnk[anchor])
+            tail = self._sigma_lnk[log_p.size:] - self._lnk[-1]
+            log_p = np.concatenate((log_p, log_p[-1] + min(slope, self.n_s - 3.0) * tail))
+        integrand = np.exp(log_p + 3.0 * self._sigma_lnk) / (2.0 * PI ** 2)
         r = np.atleast_1d(np.asarray(r, dtype=np.float64))
         # Broadcast over (n_r, n_k) so the whole radius grid is one tensor
         # operation: this is the shape the GPU backend will consume.
-        x = r[:, None] * self.k_lin[None, :]
+        x = r[:, None] * self._sigma_k[None, :]
         small = np.abs(x) < 1e-3
         w = np.empty_like(x)
         w[small] = 1.0 - x[small] ** 2 / 10.0
         xb = x[~small]
         w[~small] = 3.0 * (np.sin(xb) - xb * np.cos(xb)) / xb ** 3
-        out = np.trapezoid(integrand[None, :] * w * w, lnk, axis=1)
+        out = np.trapezoid(integrand[None, :] * w * w, self._sigma_lnk, axis=1)
         return np.sqrt(np.maximum(out, 0.0))
 
     # -- parameter fits --------------------------------------------------
@@ -351,11 +369,11 @@ class HMcode2020:
         lnk = np.log(np.geomspace(KMIN_WIGGLE, KMAX_WIGGLE, NK_WIGGLE))
         dx = float(lnk[1] - lnk[0])
         kk = np.exp(lnk)
-        p_lin = np.interp(lnk, self._lnk, self.p_lin)
+        p_lin = self._pk(np.clip(kk, self.k_lin[0], self.k_lin[-1]), cold=False)
         d2_lin = p_lin * kk ** 3 / (2.0 * PI ** 2)
         d2_nw = _eisenstein_hu_nowiggle(
             kk, omega_m=self.omega_m, omega_b=self.omega_b,
-            h=self.h, n_s=self.n_s)
+            h=self.h, n_s=self.n_s, t_cmb=self.t_cmb)
         # Pin the no-wiggle spectrum to the linear one at the normalisation
         # wavenumber, as calculate_nowiggle does with knorm = 0.03.
         j = int(np.argmin(np.abs(kk - KNORM_NOWIGGLE)))
@@ -365,17 +383,16 @@ class HMcode2020:
 
         # CAMB leaves points within nsig = 3 sigma of either end unsmoothed, and
         # normalises by the kernel weight actually used.
-        n = ratio.size
-        idx = np.arange(n)
-        kernel = np.exp(-0.5 * (idx * dx / WIGGLE_SIGMA) ** 2)
-        smoothed = np.empty(n)
+        offsets = np.arange(1 - ratio.size, ratio.size)
+        kernel = np.exp(-0.5 * (offsets * dx / WIGGLE_SIGMA) ** 2)
+        # Convolve both the data and the support, so interior points retain the
+        # same finite-grid normalization as the reference.
+        center = slice(ratio.size - 1, 2 * ratio.size - 1)
+        smoothed = (np.convolve(ratio, kernel, "full")[center]
+                    / np.convolve(np.ones_like(ratio), kernel, "full")[center])
         edge = 3.0 * WIGGLE_SIGMA
-        for i in range(n):
-            if lnk[i] - lnk[0] < edge or lnk[-1] - lnk[i] < edge:
-                smoothed[i] = ratio[i]
-            else:
-                w = kernel[np.abs(idx - i)]
-                smoothed[i] = float(np.sum(ratio * w) / np.sum(w))
+        at_edge = (lnk - lnk[0] < edge) | (lnk[-1] - lnk < edge)
+        smoothed[at_edge] = ratio[at_edge]
 
         self._lnk_wiggle = lnk
         # Back to P units: _dewiggle applies the k^3/(2 pi^2) conversion itself.
@@ -383,7 +400,8 @@ class HMcode2020:
 
         # Velocity dispersion sigma_v^2 = (1/6pi^2) int dk P(k), the R -> 0 limit
         # of CAMB's sigmaV; sets how fast the wiggle is damped away.
-        self._sigv = float(np.sqrt(max(np.trapezoid(self.p_lin, self.k_lin) / (6.0 * PI ** 2), 0.0)))
+        variance = np.trapezoid(self.p_lin, self.k_lin) / (6.0 * PI ** 2)
+        self._sigv = self._d * float(np.sqrt(max(variance, 0.0)))
 
     def _dewiggle(self, k, d2_lin):
         """Linear Delta^2 with the BAO wiggle damped by exp(-(k sigma_v)^2)."""
@@ -422,6 +440,29 @@ class HMcode2020:
 
 
 # -- Mead (2017) growth terms -------------------------------------------
+
+def halo_growth(omega_m):
+    """Scale-independent growth in the flat matter–Lambda halo background."""
+    a = np.linspace(0.0, 1.0, 512)
+    growth_over_a = hyp2f1(1.0 / 3.0, 1.0, 11.0 / 6.0, -(1.0 - omega_m) / omega_m * a ** 3)
+    normalization = float(growth_over_a[-1])
+    growth = CubicSpline(a, a * growth_over_a / normalization)
+    integrated = CubicSpline(a, cumulative_simpson(growth_over_a, x=a, initial=0.0))
+    return growth, integrated, normalization
+
+
+def cold_transfer_ratio(k, *, omega_m, f_nu, n_massive, h, t_cmb, growth):
+    """Eisenstein–Hu cold-to-total transfer ratio used by CAMB's HMcode."""
+    if f_nu == 0.0 or n_massive == 0:
+        return np.ones_like(k)
+    exponent = 6.0 * f_nu / (5.0 + np.sqrt(25.0 - 24.0 * f_nu))
+    theta = t_cmb / 2.7
+    z_eq = 2.5e4 * omega_m * h ** 2 / theta ** 4
+    q = k * theta ** 2 / (omega_m * h)
+    y_fs = 17.2 * f_nu * (1.0 + 0.488 * f_nu ** (-7.0 / 6.0)) * (n_massive * q / f_nu) ** 2
+    free_growth = ((1.0 + z_eq) * growth / (1.0 + y_fs)) ** 0.7
+    return ((1.0 + free_growth) / ((1.0 - f_nu) ** (0.7 / exponent) + free_growth)) ** (exponent / 0.7)
+
 
 def _eisenstein_hu_nowiggle(k, omega_m, omega_b, h, n_s, t_cmb=T_CMB0_DEFAULT):
     """Eisenstein & Hu (1998) no-wiggle spectrum, **in Delta^2 units**.

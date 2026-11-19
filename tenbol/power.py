@@ -101,40 +101,26 @@ def matter_power_nl(cosmologies: CosmologyBatch, k_h, redshifts,
                     *, backend: str = "numpy", device: int | None = None) -> np.ndarray:
     """Nonlinear matter power from HMcode-2020, ``(n_c, n_k, n_z)`` in (Mpc/h)^3.
 
-    The halo model is driven by this code's own linear spectrum and growth:
-    ``PowerResult.growth_callable`` supplies ``D(a)`` to 0.33% of CAMB's
-    ``delta_tot`` where ``sigma.linear_growth`` reads 1.86% high.
-
-    Three things are mandatory and each fails silently if omitted:
-
-    * ``terms`` must be ``sigma.growth_terms``.  Without it Mead's dc/Dv fits run
-      in the Einstein-de Sitter limit, which costs 28% of the high-k power.
-    * the linear spectrum must be the one at the *tabulation* redshift (z = 0),
-      which is what HMcode rescales from; passing P at some other z double-counts
-      the growth.
-    * the solve must run on a **dense internal k grid**, not the caller's.  The
-      halo model integrates ``Delta^2(k) W^2(kR)`` over ln k to get sigma(R), and
-      isolates the BAO wiggle by smoothing a 512-point table; a handful of k
-      points destroys both.  Measured, a two-point grid gave 27% error at
-      k = 1 h/Mpc on a call that is accurate to 0.86% on a dense grid.  So the
-      solve uses ``k_grid_size`` points over ``k_range`` and the result is
-      interpolated back to ``k_h``.
-
+    The Boltzmann solver evaluates total linear power at each requested
+    redshift on an internal grid of ``k_grid_size`` points over ``k_range``.
+    HMcode derives cold power for halo variance and uses the total spectrum
+    for the two-halo term. It extends the variance quadrature on the host
+    and interpolates the combined nonlinear power back to ``k_h``.
     ``backend`` and ``device`` select the linear solver used by HMcode.
-
-    Known accuracy: 0.48-0.88% max deviation across the workload apart from
-    ``sum m_nu = 0.30 eV``, which reaches 1.40%.  The 0.5% target is not yet met.
     """
-    from tenbol.physics.hmcode import HMcode2020
-    from tenbol.physics.sigma import growth_terms
+    from scipy.interpolate import CubicSpline
+
+    from tenbol.physics.hmcode import HMcode2020, cold_transfer_ratio, halo_growth
 
     k_out = np.atleast_1d(np.asarray(k_h, dtype=np.float64))
     z_out = np.atleast_1d(np.asarray(redshifts, dtype=np.float64))
+    n_c = len(cosmologies.h)
+    if not z_out.size:
+        return np.empty((n_c, k_out.size, 0))
     reion = reionization or Reionization()
     k_in = np.geomspace(float(k_range[0]), float(k_range[1]), int(k_grid_size))
-    # HMcode tabulates D(a) over a = 1e-3..1, so the growth callable needs a grid
-    # spanning that range, not just the redshifts the caller asked about.
-    z_grid = np.unique(np.concatenate([[0.0], z_out, np.geomspace(0.1, 1000.0, 24)]))
+    log_k_out = np.log(k_out)
+    z_grid, restore_order = np.unique(z_out, return_inverse=True)
     lin = matter_power(cosmologies, k_in, z_grid, settings=settings,
                        reionization=reion, use_cache=use_cache,
                        backend=backend, device=device)
@@ -144,47 +130,46 @@ def matter_power_nl(cosmologies: CosmologyBatch, k_h, redshifts,
         bg = Background(cosmologies)
 
     parts = bg.grho_parts(1.0)
-    tot = np.asarray(bg.grho(1.0), dtype=np.float64)
-    om_m = (np.asarray(parts["c"]) + np.asarray(parts["b"])
-            + np.asarray(parts["nu_mass"])) / tot
-    om_b = np.asarray(parts["b"]) / tot
-    om_c = np.asarray(parts["c"]) / tot
-    om_nu = np.asarray(parts["nu_mass"]) / tot
-    x_terms, y_terms, _ = growth_terms(bg, z_out)
+    tot = np.sum(np.stack(list(parts.values())), axis=0)
+    om_b = parts["b"] / tot
+    om_c = parts["c"] / tot
+    massive = bg.m_nu > 0.0
+    om_nu = np.sum(np.where(massive, bg.grho_nu_mass0, 0.0), axis=1) / tot
+    om_m = om_b + om_c + om_nu
 
-    n_c = int(np.asarray(cosmologies.h).size)
-    k_pivot = cosmologies.pivot_k
-    out = np.full((n_c, k_out.size, z_out.size), np.nan, dtype=np.float64)
-    i0 = int(np.argmin(np.abs(z_grid)))       # the tabulation redshift, z = 0
+    a = 1.0 / (1.0 + z_grid)
+    out = np.empty((n_c, k_out.size, z_grid.size), dtype=np.float64)
     for ci in range(n_c):
-        h = float(np.asarray(cosmologies.h)[ci])
+        h = cosmologies.h[ci]
         k_mpc = k_in * h
-        a_s = float(np.asarray(cosmologies.A_s)[ci])
-        n_s = float(np.asarray(cosmologies.n_s)[ci])
-        # HMcode's linear input is the COLD-matter spectrum, not the total one:
-        # halofit.f90 scales it by (T_cb/T_cbnu)^2 internally when neutrinos are
-        # present, and sigma_cold feeds eta, k_star, k_damp and fdamp all at
-        # once.  Handing it the total spectrum makes sigma_cold too high, and
-        # measured, that is why sum m_nu = 0.30 eV degraded to 1.40% while
-        # 0.06 eV sat near 0.9%.
-        d_cb = ((om_c[ci] * np.asarray(lin.delta_cdm[ci, :, i0])
-                 + om_b[ci] * np.asarray(lin.delta_b[ci, :, i0]))
-                / (om_c[ci] + om_b[ci]))
-        p_cb0 = ((d_cb ** 2) * (2.0 * np.pi ** 2 / k_mpc ** 3)
-                 * a_s * (k_mpc / k_pivot) ** (n_s - 1.0) * h ** 3)
-        ok = np.isfinite(p_cb0) & (p_cb0 > 0.0)
-        growth = lin.growth_callable(k_index=0, cosmo_index=ci)
-        for jz, zz in enumerate(z_out):
-            terms = x_terms[ci, jz], y_terms[ci, jz]
+        n_s = cosmologies.n_s[ci]
+        t_cmb = cosmologies.T_cmb[ci]
+        primordial = ((2.0 * np.pi ** 2 / k_mpc ** 3) * cosmologies.A_s[ci]
+                      * (k_mpc / cosmologies.pivot_k) ** (n_s - 1.0) * h ** 3)
+        growth, integrated, normalization = halo_growth(om_m[ci])
+        d = growth(a)
+        unnormalized = d * normalization
+        x = unnormalized / a
+        y = integrated(a) / a
+        n_massive = np.count_nonzero(massive[ci])
+        for jz, z in enumerate(z_grid):
+            # Each input spectrum is stored divided by D(z)^2. Restoring D(z)
+            # inside HMcode then preserves the scale dependence at this z.
+            p_tot = primordial * (lin.delta_m[ci, :, jz] / d[jz]) ** 2
+            ratio = cold_transfer_ratio(
+                k_in, omega_m=om_m[ci], f_nu=om_nu[ci] / om_m[ci],
+                n_massive=n_massive, h=h, t_cmb=t_cmb, growth=unnormalized[jz])
+            ok = np.isfinite(p_tot) & (p_tot > 0.0)
+            terms = x[jz], y[jz]
             model = HMcode2020(
-                omega_m=float(om_m[ci]), omega_b=float(om_b[ci]),
-                omega_c=float(om_c[ci]), omega_nu=float(om_nu[ci]),
-                h=h, n_s=n_s,
-                k_lin=k_in[ok], p_lin=p_cb0[ok], growth=growth,
-                terms=lambda _, xy=terms: xy, z=float(zz))
-            p_in = np.asarray(model.power(k_in[ok]))
-            out[ci, :, jz] = np.interp(np.log(k_out), np.log(k_in[ok]), p_in)
-    return out
+                omega_m=om_m[ci], omega_b=om_b[ci], omega_c=om_c[ci], omega_nu=om_nu[ci],
+                h=h, n_s=n_s, t_cmb=t_cmb, k_lin=k_in[ok], p_lin=p_tot[ok],
+                p_cold=p_tot[ok] * ratio[ok] ** 2, growth=growth,
+                terms=lambda _, xy=terms: xy, z=z)
+            log_k_in = np.log(model.k_lin)
+            log_p = CubicSpline(log_k_in, np.log(model.power(model.k_lin)))
+            out[ci, :, jz] = np.exp(log_p(np.clip(log_k_out, log_k_in[0], log_k_in[-1])))
+    return out[:, :, restore_order]
 
 
 # --- caching -----------------------------------------------------------
