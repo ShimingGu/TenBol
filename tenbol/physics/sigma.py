@@ -28,7 +28,7 @@ def _omega_m(bg, a):
     parts = bg.grho_parts(a)
     total = bg.grho(a)
     matter = parts["c"] + parts["b"] + parts["nu_mass"]
-    return float(np.ravel(matter / total)[0])
+    return matter / total
 
 
 def linear_growth(bg, a_out, a_start: float = 3.0e-2):
@@ -61,43 +61,40 @@ def linear_growth(bg, a_out, a_start: float = 3.0e-2):
         Growth factor with shape ``(batch, len(a_out))``.
     """
     a_out = np.atleast_1d(np.asarray(a_out, dtype=np.float64))
+    n = bg.B
 
     def rhs(ln_a, y):
         a = np.exp(ln_a)
-        d = y[0]
-        dd = y[1]
-        h = float(np.ravel(bg.hubble(a))[0])
+        d, dd = y[:n], y[n:]
+        h = bg.hubble(a)
         # ``hubble_prime`` is d(H_hat)/d(tau), so d ln H_hat / d ln a = hp/H_hat**2.
         # The growth equation wants d ln H / d ln a for the *physical* H = H_hat/a,
         # which is that minus one: for EdS this gives -1.5, the value that makes
         # D ~ a an exact solution.
-        hp = float(np.ravel(bg.hubble_prime(a))[0])
+        hp = bg.hubble_prime(a)
         dlnh = hp / h ** 2 - 1.0
         om = _omega_m(bg, a)
-        return np.array([dd, -(2.0 + dlnh) * dd + 1.5 * om * d])
+        return np.concatenate((dd, -(2.0 + dlnh) * dd + 1.5 * om * d))
 
     if np.any(a_out > 1.0):
         raise ValueError("a_out must not exceed 1: the growth factor is normalised at a=1")
-    y0 = np.array([a_start, a_start])       # D = a, dD/dln a = a in the matter era
+    y0 = np.full(2 * n, a_start)            # D = a, dD/dln a = a in the matter era
     # Always integrate up to a = 1 so the normalisation is taken there, whatever
     # the caller asked for; then interpolate inside the solved range.
     sol = solve_ivp(rhs, (np.log(a_start), 0.0), y0, method="RK45",
                     rtol=1e-9, atol=1e-12, dense_output=True)
     if not sol.success:
         raise RuntimeError(f"growth ODE failed: {sol.message}")
-    d1 = float(sol.sol(0.0)[0])
+    d1 = sol.sol(0.0)[:n]
     a_clipped = np.maximum(a_out, a_start)
-    d = sol.sol(np.log(a_clipped))[0]
+    d = sol.sol(np.log(a_clipped))[:n]
     # Below a_start the solution cannot be integrated, but that region is deep
     # in matter domination (radiation is 1% at a_start = 0.03) where D ~ a is
     # accurate.  Without this, callers that tabulate from a = 1e-3 -- CAMB's
     # amin_growth_interpolation -- would get a constant extrapolation and a
     # non-monotonic table.
-    d_start = float(sol.sol(np.log(a_start))[0])
-    d = np.where(a_out < a_start, d_start * (a_out / a_start), d)
-    # The batch axis: Background currently broadcasts a single cosmology, so the
-    # solution is one trajectory; keep the (batch, len(a_out)) contract explicit.
-    return np.atleast_2d(d / d1)
+    d = np.where(a_out < a_start, a_out, d)
+    return d / d1[:, None]
 
 
 def top_hat_window(x):
@@ -154,21 +151,26 @@ def growth_terms(bg, z, a_start: float = 3.0e-2, n_tab: int = 512):
     both of which equal 1 for an Einstein-de Sitter universe.  ``g`` is built
     from the same normalised growth factor ``linear_growth`` returns, so the two
     services cannot drift apart: ``g(a) = gnorm * D(a)`` with ``gnorm`` fixed by
-    the matter-era condition ``g(a_start) = a_start``.
+    the matter-era condition ``g(a_start) = a_start``. A redshift vector returns
+    ``x`` and ``y`` with axes (cosmology, redshift), and one ``gnorm`` per
+    cosmology. A scalar redshift returns the first cosmology's three scalars.
     """
     a_tab = np.linspace(a_start, 1.0, n_tab)
-    d_tab = linear_growth(bg, a_tab)[0]
-    gnorm = a_start / d_tab[0]                  # g(a_start) = a_start
-    g = gnorm * d_tab
+    d_tab = linear_growth(bg, a_tab, a_start=a_start)
+    gnorm = a_start / d_tab[:, 0]               # g(a_start) = a_start
+    g = gnorm[:, None] * d_tab
 
     # G(a) = int_0^a g/a' da'; below a_tab[0] the ratio g/a' -> 1 and contributes g[0].
     over_a = g / a_tab
-    g_acc = np.empty(n_tab)
-    g_acc[0] = g[0]
-    g_acc[1:] = g[0] + np.cumsum(
-        0.5 * (over_a[1:] + over_a[:-1]) * np.diff(a_tab))
+    g_acc = np.empty_like(g)
+    g_acc[:, 0] = g[:, 0]
+    g_acc[:, 1:] = g[:, :1] + np.cumsum(
+        0.5 * (over_a[:, 1:] + over_a[:, :-1]) * np.diff(a_tab), axis=1)
 
-    a = 1.0 / (1.0 + float(z))
-    g_z = float(np.interp(a, a_tab, g))
-    G_z = float(np.interp(a, a_tab, g_acc))
+    a = 1.0 / (1.0 + np.asarray(z, dtype=np.float64))
+    if a.ndim == 0:
+        return (float(np.interp(a, a_tab, g[0]) / a),
+                float(np.interp(a, a_tab, g_acc[0]) / a), float(gnorm[0]))
+    g_z = np.stack([np.interp(a, a_tab, row) for row in g])
+    G_z = np.stack([np.interp(a, a_tab, row) for row in g_acc])
     return g_z / a, G_z / a, gnorm

@@ -147,14 +147,14 @@ class PerturbationBatch:
         # as where the cumulative visibility reaches 0.995, which sits at a
         # similar conformal time (~329 Mpc for this cosmology).
         _z = np.exp(-self._ln_a) - 1.0
-        _below = ((thermal.xe_table[self.sample] < 1.0e-2)
+        _below = ((thermal.xe_table < 1.0e-2)
                   & (_z[None, :] < 1500.0) & (_z[None, :] > 400.0))
         _has = _below.any(axis=1)
         _first = np.argmax(_below, axis=1)
         _a_rec = np.where(_has, np.exp(self._ln_a[_first]), 1.0e-3)
         self._taurend = np.array(
-            [np.interp(np.log(aa), self._ln_a, self._tau_grid[si])
-             for aa, si in zip(_a_rec, self.sample)])
+            [np.interp(np.log(aa), self._ln_a, row)
+             for aa, row in zip(_a_rec, self._tau_grid)])[s]
         # CAMB uses *two different* switch times and they are nowhere near each
         # other (equations.f90:311-324):
         #   neutrino: max(15/k, min(State%taurend, matter_verydom_tau))
@@ -167,13 +167,9 @@ class PerturbationBatch:
         # z = 878, tau = 328.79) freezes the massive-neutrino hierarchy 6.7x too
         # early: CAMB keeps it evolving until tau = 2198.46 (z = 40.8) here.
         _a_vd = 5.0 * bg.grho_r0 / (bg.grho_c0 + bg.grho_b0)
-        # _a_vd is per-cosmology; expand it to per-trajectory first.  Without
-        # the expansion zip() silently truncated to n_cosmo entries, so any
-        # batch with T > n_cosmo got a _taurend_nu too short to broadcast.
-        _a_vd_t = np.ravel(_a_vd)[np.asarray(self.sample, dtype=np.int64)]
         self._taurend_nu = np.array(
-            [np.interp(np.log(aa), self._ln_a, self._tau_grid[si])
-             for aa, si in zip(_a_vd_t, self.sample)])
+            [np.interp(np.log(aa), self._ln_a, row)
+             for aa, row in zip(_a_vd, self._tau_grid)])[s]
         self._cs2_tab = thermal.cs2_b(np.exp(self._ln_a))
         self._tau_tab = bg._tau_table
         self._rho_spl, self._p_spl = bg._nu_tables()

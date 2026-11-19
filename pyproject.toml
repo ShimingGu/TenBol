@@ -12,10 +12,14 @@ dependencies = ["numpy>=1.24"]
 [project.optional-dependencies]
 reference = ["camb>=2.0.5", "scipy>=1.10"]
 torch = ["torch>=2.4"]
+cuda = ["cupy-cuda13x[ctk]>=14", "scipy>=1.10"]
 test = ["pytest>=8"]
 
 [tool.setuptools.packages.find]
 include = ["tenbol*"]
+
+[tool.setuptools.package-data]
+"tenbol.backends" = ["trajectory.cu"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/tenbol"]

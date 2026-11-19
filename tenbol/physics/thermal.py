@@ -122,11 +122,10 @@ def _he_rate_factor(z):
 class _SampleThermo:
     """RECFAST ionisation equations for one cosmology."""
 
-    def __init__(self, T_now, f_he, n_H0_m3, hubble_s):
+    def __init__(self, T_now, f_he, n_H0_m3):
         self.T_now = T_now
         self.f_he = f_he
         self.n_H0 = n_H0_m3
-        self.hubble_s = hubble_s          # callable a -> H(a) [1/s]
 
     def n_H(self, z):
         return self.n_H0 * (1.0 + z) ** 3
@@ -206,26 +205,33 @@ class ThermalHistory:
         self.tm_table = np.empty((B, n_table))
         self.z_re = np.empty(B)
         self.tau_total = np.empty(B)
+
+        a = np.exp(self.ln_a_table)
+        z = np.exp(-self.ln_a_table) - 1.0
+        z_mid = 1.0 / np.exp(0.5 * (self.ln_a_table[:-1] + self.ln_a_table[1:])) - 1.0
+
+        def hubble_grid(scale_factors):
+            # Bound the temporary storage used by the neutrino quadrature.
+            columns = []
+            for start in range(0, scale_factors.size, 256):
+                segment = scale_factors[start:start + 256]
+                grid = np.broadcast_to(segment, (B, segment.size))
+                columns.append(background.hubbles_per_s(grid))
+            return np.concatenate(columns, axis=1)
+
+        h = hubble_grid(a)
+        h_mid = hubble_grid(1.0 / (1.0 + z_mid))
         for i in range(B):
-            self._solve_one(i)
+            self._solve_one(i, a, z, z_mid, h[i], h_mid[i])
         self._build_splines()
 
     # ------------------------------------------------------------------
-    def _solve_one(self, i):
+    def _solve_one(self, i, a, z, z_mid, H_sec, H_mid):
         from scipy.optimize import brentq
 
         bg = self.bg
 
-        def hubble_s(a_arr):
-            a_arr = np.atleast_1d(np.asarray(a_arr, dtype=np.float64))
-            return bg.hubble(a_arr)[i] / a_arr * C_LIGHT / MPC_M
-
-        th = _SampleThermo(float(bg.T_cmb[i]), float(bg.f_he[i]),
-                           float(bg.N_H0[i]), hubble_s)
-        z = np.exp(-self.ln_a_table) - 1.0
-        a = np.exp(self.ln_a_table)
-        T_rad = th.T_now * (1.0 + z)
-        H_sec = hubble_s(a)
+        th = _SampleThermo(float(bg.T_cmb[i]), float(bg.f_he[i]), float(bg.N_H0[i]))
 
         n_a = len(z)
         x_H = np.empty(n_a)
@@ -233,11 +239,10 @@ class ThermalHistory:
         Tm = np.empty(n_a)
         x_H[0] = 1.0
         x_He[0] = 1.0
-        Tm[0] = T_rad[0]
+        Tm[0] = th.T_now * (1.0 + z[0])
 
         for k in range(n_a - 1):
             zk, zk1 = z[k], z[k + 1]
-            h = zk1 - zk
             dlna = self.ln_a_table[k + 1] - self.ln_a_table[k]
             xh, xhe, tm = x_H[k], x_He[k], Tm[k]
 
@@ -263,14 +268,12 @@ class ThermalHistory:
             x_He[k + 1] = min(max(xhe_new, 0.0), 1.0)
 
             # ---- matter temperature -------------------------------------
-            zm = 1.0 / np.exp(0.5 * (self.ln_a_table[k] + self.ln_a_table[k + 1])) - 1.0
-            T_rad_m = th.T_now * (1.0 + zm)
-            Hm = hubble_s(np.array([1.0 / (1.0 + zm)]))[0]
+            T_rad_m = th.T_now * (1.0 + z_mid[k])
             xe = x_H[k + 1] + th.f_he * x_He[k + 1]
             gamma = (
                 (8.0 * SIGMA_THOMSON * A_RAD * T_rad_m**4) / (3.0 * M_E * C_LIGHT)
             ) * (xe / (1.0 + xe + th.f_he))
-            r = gamma / Hm
+            r = gamma / H_mid[k]
             T_eq = r * T_rad_m / (2.0 + r)
             decay = np.exp(-(2.0 + r) * dlna)
             Tm[k + 1] = T_eq + (tm - T_eq) * decay

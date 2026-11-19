@@ -1,12 +1,10 @@
 # Tenbol
 
-A modular, batch-native Einstein–Boltzmann framework for MCMC matter power,
-implemented in Python. This repository is a **work in progress**: the
-background/thermal layers are implemented and validated against CAMB 2.0.5; the
-perturbation solver is implemented but **not yet validated**, and everything
-downstream of it (linear spectrum assembly, HMcode, batch pipeline, CUDA/MPS
-backends, performance work) is not built. See "Status" below for the precise,
-evidence-backed account.
+A modular, batch-native Einstein–Boltzmann framework for MCMC matter power.
+Tenbol provides linear transfers and HMcode nonlinear power, with NumPy and
+experimental native CUDA perturbation solvers. The background and thermal
+layers have been validated against CAMB 2.0.5. The full pipeline is a work in
+progress and its nonlinear accuracy target remains open.
 
 ## Design reference
 
@@ -62,8 +60,19 @@ bg = Background(batch)                       # H(a), tau(a), densities
 th = ThermalHistory(bg, Reionization(tau=0.0544))   # x_e(a), T_m, opacity, c_s^2
 ```
 
-The perturbation layer (`tenbol.physics.perturbations.PerturbationBatch`,
-`evolve`) is not part of the supported public API yet.
+Use `tenbol.power.matter_power` for batched linear transfers and
+`tenbol.power.matter_power_nl` for nonlinear power. Both default to NumPy.
+Install `pip install '.[cuda]'` on an NVIDIA CUDA 13 system to use the
+experimental native backend:
+
+```python
+from tenbol.power import matter_power
+
+linear = matter_power(batch, [0.01, 0.1, 1.0], [0.0, 1.0], backend="cuda")
+```
+
+The CUDA kernel advances each mode independently. Background, thermal history,
+and HMcode still run on the host.
 
 ## Status
 
@@ -75,9 +84,9 @@ Verified against CAMB 2.0.5 (see `Tenbol_progress.md` for commands and numbers):
 | Background (H(a), conformal time, neutrino thermodynamics, degeneracies) | validated to 3e-4 in H, ~1e-6 in chi(z) |
 | BBN helium | fit to CAMB's predictor, residual 1.6e-6 |
 | Thermal history (RECFAST-level) | validated through the sound horizon: r\*(z\*) = 144.41 Mpc vs CAMB 144.41 (4e-5) |
-| Perturbation solver | implemented (photons+polarization, massless/massive neutrinos, tight coupling, RSA, per-trajectory RK4); **low-k transfer shape correct, high-k incorrect, k ≳ 0.5 h/Mpc unstable** |
-| Linear P(k), sigma(R), HMcode-2020 | not implemented |
-| Batch API, CPU pipeline, CUDA, MPS, performance comparison | not implemented |
+| Perturbation solver | per-trajectory RK4 with photon polarization, massive and massless neutrinos, tight coupling, and the radiation streaming approximation |
+| Linear transfers and HMcode-2020 | batched APIs available |
+| Native CUDA | perturbation solver available through the batched APIs; end-to-end accuracy and throughput are under validation |
 
 The acceptance criterion of the task (max 0.5% relative difference in final
 nonlinear power including HMcode, per backend) is **not met and not claimed**.
@@ -87,13 +96,12 @@ nonlinear power including HMcode, per backend) is **not met and not claimed**.
 ```bash
 PYTHONPATH=. python3.13 benchmarks/tenbol/reference_convergence.py --out profiles/tenbol/evidence
 PYTHONPATH=. python3.13 benchmarks/tenbol/linear_validation.py --out profiles/tenbol/evidence
-PYTHONPATH=. python3.13 benchmarks/tenbol/baseline_cpu.py --batch 32 --workers 8 16
+PYTHONPATH=. python3.13 benchmarks/tenbol/baseline_cpu.py --batch 32 --workers 8 16 --cuda
 ```
 
 `reference_convergence.py` establishes that the reference itself is converged
 (AccuracyBoost 2 vs 3: 1e-4) and quantifies the sensitivity to thermal-history
 and background settings. `linear_validation.py` records the candidate/reference
 linear-power comparison (currently failing; the file is evidence of the
-diagnosis). `baseline_cpu.py` measures the tuned parallel-CPU CAMB baseline;
-it must be run with process isolation because CAMB plus `fork` deadlocks with
-BLAS/OpenMP in this container.
+diagnosis). `baseline_cpu.py` times parallel CAMB using spawned workers and can
+compare it with Tenbol's CUDA nonlinear pipeline on the same cosmologies.

@@ -1,0 +1,26 @@
+{
+  "device": "NVIDIA H100 NVL MIG 1g.12gb",
+  "driver": "620.70.06",
+  "reference": "CAMB 2.0.5 with the workload manifest accuracy settings",
+  "scope": "Warmed CUDA and CAMB contexts, including background/thermal setup and nonlinear power. Each CUDA evaluation clears the background cache.",
+  "workload": {
+    "seed": 20261106,
+    "k_output_h_mpc": {"min": 0.0001, "max": 10.0, "points": 256},
+    "cuda_k_internal_h_mpc": {"min": 0.0001, "max": 20.0, "points": 128},
+    "redshifts": [0.0, 0.5, 1.0, 2.0],
+    "cuda_dlna_acoustic": 0.24,
+    "timed_repeats": 1
+  },
+  "runs": [
+    {
+      "cosmologies": 2,
+      "camb_workers": 2,
+      "camb_wall_seconds": 27.178876489000686,
+      "cuda_wall_seconds": 20.693427568003244,
+      "wall_time_speedup": 1.3134062203897736,
+      "max_relative_nonlinear_power_error": 0.040470555579026124,
+      "worst_point": {"cosmology_index": 0, "k_h_mpc": 0.11450475699382812, "z": 2.0}
+    }
+  ],
+  "acceptance": {"max_relative_nonlinear_power_error": 0.005, "matched_accuracy_speedup": 2.0}
+}

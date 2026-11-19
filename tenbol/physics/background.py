@@ -202,7 +202,7 @@ class Background:
     def _a(self, a):
         a = np.asarray(a, dtype=np.float64)
         if a.ndim == 0:
-            return a.reshape(1), 1
+            return np.broadcast_to(a, (self.B,)), 1
         if a.shape[0] == self.B:
             return a, a.ndim
         # a grid shared by every sample: broadcast to (B, ...)

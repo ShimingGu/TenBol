@@ -5,7 +5,7 @@ import pytest
 
 from tenbol.adapters.camb_reference import Cosmology, ReferenceSettings, reference_run
 from tenbol.physics.background import Background, CosmologyBatch
-from tenbol.physics.sigma import linear_growth, sigma8
+from tenbol.physics.sigma import growth_terms, linear_growth, sigma8
 
 COSMO = dict(h=0.67, omega_b=0.0224, omega_c=0.120, A_s=2.1e-9, n_s=0.965)
 
@@ -30,6 +30,24 @@ def test_growth_is_normalised_and_monotonic(background):
     assert d[0] == pytest.approx(1.0, abs=1e-12)
     # a decreases along the array, so a monotonic D(a) must decrease too
     assert np.all(np.diff(d) < 0.0)
+
+
+def test_batched_growth_terms_match_individual_cosmologies(background):
+    second = dict(COSMO, h=0.72, omega_c=0.14, m_nu=0.30)
+    other = Background(CosmologyBatch.from_columns(**second))
+    batch = Background(CosmologyBatch.from_columns(
+        **dict(COSMO, h=[COSMO["h"], second["h"]],
+               omega_c=[COSMO["omega_c"], second["omega_c"]], m_nu=[0.06, 0.30])
+    ))
+    z = [0.0, 1.0, 2.0]
+    x, y, norm = growth_terms(batch, z)
+    assert x.shape == y.shape == (2, 3)
+    assert not np.allclose(x[0], x[1])
+    for i, single in enumerate((background, other)):
+        sx, sy, snorm = growth_terms(single, z)
+        np.testing.assert_allclose(x[i], sx[0], rtol=1e-7)
+        np.testing.assert_allclose(y[i], sy[0], rtol=1e-7)
+        np.testing.assert_allclose(norm[i], snorm[0], rtol=1e-7)
 
 
 def test_sigma8_matches_camb(background, reference):

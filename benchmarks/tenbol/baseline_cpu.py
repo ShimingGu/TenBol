@@ -6,7 +6,7 @@ linear spectrum, sigma(R), HMcode, result assembly) for batches of *distinct*
 cosmologies with warmed worker processes.  Cold start (interpreter + BBN table
 load + first CAMB call) is measured separately and reported, not hidden.
 
-Run: PYTHONPATH=. python benchmarks/tenbol/baseline_cpu.py --batch 32 --workers 16
+Run: PYTHONPATH=. python benchmarks/tenbol/baseline_cpu.py --batch 32 --workers 16 --cuda
 """
 
 from __future__ import annotations
@@ -23,11 +23,11 @@ from tenbol.adapters.camb_reference import (
     Cosmology,
     ReferenceSettings,
     reference_run,
-    _init_worker,
-    _worker,
 )
 
 SETTINGS = ReferenceSettings()
+REDSHIFTS = (0.0, 0.5, 1.0, 2.0)
+K_H = np.geomspace(1e-4, 10.0, 256)
 
 
 def make_batch(n: int, seed: int = 20261106):
@@ -47,15 +47,45 @@ def make_batch(n: int, seed: int = 20261106):
     return out
 
 
-def timed_batch(batch, workers, pool=None):
-    args = [(c, (0.0, 0.5, 1.0, 2.0)) for c in batch]
+def reference_power(cosmology):
+    return reference_run(cosmology, SETTINGS, redshifts=REDSHIFTS,
+                         minkh=K_H[0], maxkh=K_H[-1], npoints=K_H.size)["pk_nlin"].T
+
+
+def timed_batch(batch, pool=None):
     t0 = time.perf_counter()
     if pool is not None:
-        pool.map(_worker, args)
+        values = pool.map(reference_power, batch)
     else:
-        for a in args:
-            _worker(a)
-    return time.perf_counter() - t0
+        values = [reference_power(cosmology) for cosmology in batch]
+    return time.perf_counter() - t0, np.stack(values)
+
+
+def benchmark_cuda(batch, reference, repeats):
+    from tenbol.physics.background import CosmologyBatch
+    from tenbol.power import clear_cache, matter_power_nl
+
+    params = CosmologyBatch.from_columns(
+        h=[c.h for c in batch], omega_b=[c.omega_b for c in batch],
+        omega_c=[c.omega_c for c in batch], A_s=[c.A_s for c in batch],
+        n_s=[c.n_s for c in batch], m_nu=[c.m_nu_sum for c in batch],
+    )
+    # Warm the CUDA context and compiled kernels. Each measured batch rebuilds
+    # the background and thermal history for its input parameters.
+    matter_power_nl(params, K_H, REDSHIFTS, backend="cuda")
+    times = []
+    for _ in range(repeats):
+        clear_cache()
+        t0 = time.perf_counter()
+        result = matter_power_nl(params, K_H, REDSHIFTS, backend="cuda")
+        times.append(time.perf_counter() - t0)
+    difference = np.abs(result / reference - 1.0)
+    ci, ki, zi = np.unravel_index(np.argmax(difference), difference.shape)
+    return {
+        "times": times, "median": float(np.median(times)),
+        "max_relative_error": float(difference[ci, ki, zi]),
+        "worst_point": {"cosmology": int(ci), "k_h": float(K_H[ki]), "z": REDSHIFTS[zi]},
+    }
 
 
 def main():
@@ -64,35 +94,38 @@ def main():
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--workers", type=int, nargs="+", default=[1, 4, 8, 16, 24])
     ap.add_argument("--repeats", type=int, default=3)
+    ap.add_argument("--cuda", action="store_true", help="also time and validate Tenbol's CUDA pipeline")
     args = ap.parse_args()
+    if args.batch < 1 or args.repeats < 1 or not any(1 <= w <= args.batch for w in args.workers):
+        ap.error("provide positive batch and repeat counts and at least one usable worker count")
     os.makedirs(args.out, exist_ok=True)
 
     results = {"settings": SETTINGS.__dict__, "batch_size": args.batch, "node_cpus": os.cpu_count()}
 
     # cold import/first-call cost
     t0 = time.perf_counter()
-    reference_run(Cosmology(0.67, 0.0224, 0.120, 2.1e-9, 0.965, 0.06), SETTINGS)
+    reference_power(Cosmology(0.67, 0.0224, 0.120, 2.1e-9, 0.965, 0.06))
     results["cold_first_call_s"] = time.perf_counter() - t0
 
     batch = make_batch(args.batch)
     timings = {}
-    _init_worker(SETTINGS)
     for workers in args.workers:
-        if workers > args.batch:
+        if not 1 <= workers <= args.batch:
             continue
         if workers == 1:
-            _init_worker(SETTINGS)
-            timed_batch(batch[:2], 1)                # warm-up
             ts = []
             for _ in range(args.repeats):
-                ts.append(timed_batch(batch, 1))
+                elapsed, reference = timed_batch(batch)
+                ts.append(elapsed)
         else:
-            ctx = mp.get_context("fork")
-            with ctx.Pool(workers, initializer=_init_worker, initargs=(SETTINGS,)) as pool:
-                timed_batch(batch[: min(workers, args.batch)], workers, pool)   # warm-up
+            # CAMB's OpenMP runtime cannot safely be inherited from the parent.
+            ctx = mp.get_context("spawn")
+            with ctx.Pool(workers) as pool:
+                timed_batch(batch[:workers], pool)
                 ts = []
                 for _ in range(args.repeats):
-                    ts.append(timed_batch(batch, workers, pool))
+                    elapsed, reference = timed_batch(batch, pool)
+                    ts.append(elapsed)
         timings[str(workers)] = {
             "times": ts,
             "median": float(np.median(ts)),
@@ -103,6 +136,11 @@ def main():
               f"({len(batch)/np.median(ts):.1f} evals/s)  times={[round(t,3) for t in ts]}")
 
     results["timings"] = timings
+    if args.cuda:
+        results["cuda"] = benchmark_cuda(batch, reference, args.repeats)
+        best_cpu = min(run["median"] for run in timings.values())
+        results["cuda"]["speedup_vs_best_cpu"] = best_cpu / results["cuda"]["median"]
+        print("CUDA", json.dumps(results["cuda"]))
     path = os.path.join(args.out, "baseline_cpu.json")
     with open(path, "w") as f:
         json.dump(results, f, indent=2, sort_keys=True)

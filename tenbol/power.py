@@ -97,7 +97,8 @@ def matter_power_nl(cosmologies: CosmologyBatch, k_h, redshifts,
                     reionization: Reionization | None = None,
                     use_cache: bool = True,
                     k_grid_size: int = 128,
-                    k_range: tuple[float, float] = (1.0e-4, 20.0)) -> np.ndarray:
+                    k_range: tuple[float, float] = (1.0e-4, 20.0),
+                    *, backend: str = "numpy", device: int | None = None) -> np.ndarray:
     """Nonlinear matter power from HMcode-2020, ``(n_c, n_k, n_z)`` in (Mpc/h)^3.
 
     The halo model is driven by this code's own linear spectrum and growth:
@@ -119,6 +120,8 @@ def matter_power_nl(cosmologies: CosmologyBatch, k_h, redshifts,
       solve uses ``k_grid_size`` points over ``k_range`` and the result is
       interpolated back to ``k_h``.
 
+    ``backend`` and ``device`` select the linear solver used by HMcode.
+
     Known accuracy: 0.48-0.88% max deviation across the workload apart from
     ``sum m_nu = 0.30 eV``, which reaches 1.40%.  The 0.5% target is not yet met.
     """
@@ -127,13 +130,18 @@ def matter_power_nl(cosmologies: CosmologyBatch, k_h, redshifts,
 
     k_out = np.atleast_1d(np.asarray(k_h, dtype=np.float64))
     z_out = np.atleast_1d(np.asarray(redshifts, dtype=np.float64))
+    reion = reionization or Reionization()
     k_in = np.geomspace(float(k_range[0]), float(k_range[1]), int(k_grid_size))
     # HMcode tabulates D(a) over a = 1e-3..1, so the growth callable needs a grid
     # spanning that range, not just the redshifts the caller asked about.
     z_grid = np.unique(np.concatenate([[0.0], z_out, np.geomspace(0.1, 1000.0, 24)]))
     lin = matter_power(cosmologies, k_in, z_grid, settings=settings,
-                       reionization=reionization, use_cache=use_cache)
-    (bg, _th), _ = _background_pair(cosmologies, reionization)
+                       reionization=reion, use_cache=use_cache,
+                       backend=backend, device=device)
+    if use_cache:
+        (bg, _th), _ = _background_pair(cosmologies, reion)
+    else:
+        bg = Background(cosmologies)
 
     parts = bg.grho_parts(1.0)
     tot = np.asarray(bg.grho(1.0), dtype=np.float64)
@@ -142,9 +150,10 @@ def matter_power_nl(cosmologies: CosmologyBatch, k_h, redshifts,
     om_b = np.asarray(parts["b"]) / tot
     om_c = np.asarray(parts["c"]) / tot
     om_nu = np.asarray(parts["nu_mass"]) / tot
+    x_terms, y_terms, _ = growth_terms(bg, z_out)
 
     n_c = int(np.asarray(cosmologies.h).size)
-    k_pivot = 0.05
+    k_pivot = cosmologies.pivot_k
     out = np.full((n_c, k_out.size, z_out.size), np.nan, dtype=np.float64)
     i0 = int(np.argmin(np.abs(z_grid)))       # the tabulation redshift, z = 0
     for ci in range(n_c):
@@ -166,12 +175,13 @@ def matter_power_nl(cosmologies: CosmologyBatch, k_h, redshifts,
         ok = np.isfinite(p_cb0) & (p_cb0 > 0.0)
         growth = lin.growth_callable(k_index=0, cosmo_index=ci)
         for jz, zz in enumerate(z_out):
+            terms = x_terms[ci, jz], y_terms[ci, jz]
             model = HMcode2020(
                 omega_m=float(om_m[ci]), omega_b=float(om_b[ci]),
                 omega_c=float(om_c[ci]), omega_nu=float(om_nu[ci]),
                 h=h, n_s=n_s,
                 k_lin=k_in[ok], p_lin=p_cb0[ok], growth=growth,
-                terms=lambda zq, b=bg: growth_terms(b, zq), z=float(zz))
+                terms=lambda _, xy=terms: xy, z=float(zz))
             p_in = np.asarray(model.power(k_in[ok]))
             out[ci, :, jz] = np.interp(np.log(k_out), np.log(k_in[ok]), p_in)
     return out
@@ -181,7 +191,7 @@ def matter_power_nl(cosmologies: CosmologyBatch, k_h, redshifts,
 # Keyed on the cosmological parameters only.  Background/ThermalHistory are the
 # expensive part per cosmology and are identical across wavenumbers, so a batch
 # of N cosmologies pays for them N times rather than N * n_k.
-_CACHE: dict[str, tuple] = {}
+_CACHE: dict[tuple[str, Reionization], tuple] = {}
 _MAX_CACHE = 256
 
 
@@ -189,6 +199,7 @@ def _cosmo_key(cosmologies: CosmologyBatch) -> str:
     h = cosmologies.h.tobytes() + cosmologies.omega_b.tobytes() + cosmologies.omega_c.tobytes()
     h += np.asarray(cosmologies.m_nu, dtype=np.float64).tobytes()
     h += np.asarray(cosmologies.N_eff, dtype=np.float64).tobytes()
+    h += np.asarray(cosmologies.T_cmb, dtype=np.float64).tobytes()
     return hashlib.blake2b(h, digest_size=16).hexdigest()
 
 
@@ -201,7 +212,7 @@ def cache_info() -> dict:
 
 
 def _background_pair(cosmologies: CosmologyBatch, reionization: Reionization):
-    key = _cosmo_key(cosmologies)
+    key = _cosmo_key(cosmologies), reionization
     hit = _CACHE.get(key)
     if hit is not None:
         return hit, True
@@ -217,18 +228,14 @@ def matter_power(cosmologies: CosmologyBatch, k_h, redshifts,
                  settings: PerturbationSettings | None = None,
                  reionization: Reionization | None = None,
                  use_cache: bool = True,
-                 bucket_by_k: bool = True,
-                 chunk_size: int | None = None) -> PowerResult:
+                 bucket_by_k: bool | None = None,
+                 chunk_size: int | None = None, *,
+                 backend: str = "numpy", device: int | None = None) -> PowerResult:
     """Linear matter perturbations for every (cosmology, k, z) in one batch.
 
-    ``bucket_by_k`` splits the integration into one batch per wavenumber.  The
-    solver advances every trajectory in a batch with a *shared* step, chosen as
-    the minimum over all of them, so a single stiff trajectory slows the whole
-    batch down: at 128 cosmologies x 5 k the flat batch did not finish in ten
-    minutes, while n=16 and n=32 took 94 s and 138 s.  Per-k buckets restore
-    roughly linear scaling at the cost of a few extra integrations.  This is a
-    crude version of the step-size bucketing described in
-    docs/gpu_tensor_prior_art.md.
+    ``bucket_by_k`` splits the integration into one batch per wavenumber.
+    By default NumPy uses these buckets and CUDA launches all wavenumbers
+    together, with each trajectory taking its own steps on the device.
 
     Parameters
     ----------
@@ -240,11 +247,22 @@ def matter_power(cosmologies: CosmologyBatch, k_h, redshifts,
     redshifts : array_like
         Output redshifts, ascending or descending (order is preserved in the
         returned tensor's last axis).
+    backend : {"numpy", "cuda"}
+        Integrator used for the perturbations.
+    device : int or None
+        CUDA device ordinal. The default uses the current CUDA device.
     """
     k_h = np.atleast_1d(np.asarray(k_h, dtype=np.float64))
     z = np.atleast_1d(np.asarray(redshifts, dtype=np.float64))
-    s = settings or PerturbationSettings()
-    reion = reionization or Reionization(tau=0.0544)
+    if backend not in ("numpy", "cuda"):
+        raise ValueError(f"Unknown matter power backend: {backend!r}")
+    # A CUDA convergence run found the wider acoustic step changed linear
+    # power by less than 1e-5 across its k grid. Explicit settings take priority.
+    acoustic_step = 0.24 if backend == "cuda" else PerturbationSettings.dlna_acoustic
+    s = settings or PerturbationSettings(dlna_acoustic=acoustic_step)
+    reion = reionization or Reionization()
+    if bucket_by_k is None:
+        bucket_by_k = backend == "numpy"
 
     n_c, n_k = len(cosmologies.h), k_h.size
     if chunk_size and n_c > chunk_size:
@@ -260,9 +278,11 @@ def matter_power(cosmologies: CosmologyBatch, k_h, redshifts,
                 omega_c=cosmologies.omega_c[start:stop], A_s=cosmologies.A_s[start:stop],
                 n_s=cosmologies.n_s[start:stop],
                 m_nu=np.atleast_2d(cosmologies.m_nu)[start:stop],
-                N_eff=cosmologies.N_eff[start:stop])
-            parts.append(matter_power(sub, k_h, redshifts, settings, reionization,
-                                      use_cache, bucket_by_k, chunk_size=None))
+                N_eff=cosmologies.N_eff[start:stop], T_cmb=cosmologies.T_cmb[start:stop],
+                pivot_k=cosmologies.pivot_k)
+            parts.append(matter_power(sub, k_h, redshifts, s, reionization,
+                                      use_cache, bucket_by_k, chunk_size=None,
+                                      backend=backend, device=device))
         return PowerResult(
             k_h=k_h, z=parts[0].z,
             delta_m=np.concatenate([p.delta_m for p in parts], axis=0),
@@ -271,8 +291,9 @@ def matter_power(cosmologies: CosmologyBatch, k_h, redshifts,
             n_steps=sum(p.n_steps for p in parts),
         )
     if bucket_by_k and n_k > 1:
-        parts = [matter_power(cosmologies, [kk], redshifts, settings, reionization,
-                              use_cache, bucket_by_k=False) for kk in k_h]
+        parts = [matter_power(cosmologies, [kk], redshifts, s, reionization,
+                              use_cache, bucket_by_k=False, backend=backend,
+                              device=device) for kk in k_h]
         return PowerResult(
             k_h=k_h, z=parts[0].z,
             delta_m=np.concatenate([p.delta_m for p in parts], axis=1),
@@ -290,7 +311,12 @@ def matter_power(cosmologies: CosmologyBatch, k_h, redshifts,
         th = ThermalHistory(bg, reion)
 
     batch = PerturbationBatch(bg, th, k_mpc, sample, s)
-    rec = evolve(batch, z_out=z, a_end=1.0)
+    if backend == "cuda":
+        from tenbol.backends.cuda_solver import evolve_cuda
+
+        rec = evolve_cuda(batch, z, device=device)
+    else:
+        rec = evolve(batch, z_out=z, a_end=1.0)
 
     shape = (n_c, n_k, z.size)
     return PowerResult(
