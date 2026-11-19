@@ -42,6 +42,7 @@ struct Grid {
 struct Coefficients {
     double tau, kappa, dopacity, cs2, h, gpres, cold, baryon, photon, radiation;
     double nu_density[NS > 0 ? NS : 1];
+    double nu_rel[NS > 0 ? NS : 1];
     double mass[NS > 0 ? NS : 1];
 };
 
@@ -64,6 +65,7 @@ __device__ Coefficients coefficients(Grid grid, const double* bg, double x) {
     #pragma unroll
     for (int s = 0; s < NS; ++s) {
         c.nu_density[s] = (lo[NU_DENSITY + s] * (1.0 - t) + hi[NU_DENSITY + s] * t) * inv_a2;
+        c.nu_rel[s] = bg[MASS + NS + s] * inv_a2;
         c.mass[s] = a * bg[MASS + s];
         rho += c.nu_density[s];
     }
@@ -97,16 +99,15 @@ __device__ double rhs(
 ) {
     double density_nu = 0.0, flux_nu = 0.0;
     for (int s = 0; s < NS; ++s) {
-        double denominator = 0.0, density = 0.0, flux = 0.0;
+        double density = 0.0, flux = 0.0;
         for (int q = 0; q < NQ; ++q) {
             const double w = weights[q], we = w * energy(c.mass[s], momenta[q]);
             const int i = nu(s, q);
-            denominator += we;
             density += we * y[i];
             flux += w * y[i + 1];
         }
-        density_nu += c.nu_density[s] * (density / denominator);
-        flux_nu += c.nu_density[s] * (flux / denominator);
+        density_nu += c.nu_rel[s] * density;
+        flux_nu += c.nu_rel[s] * flux;
     }
     const double dm = c.baryon * y[DB] + c.cold * y[DC] + density_nu;
     const double qm = c.baryon * y[VB] + flux_nu;
@@ -236,7 +237,7 @@ extern "C" __global__ void integrate(
     const int trajectory = blockIdx.x * blockDim.x + threadIdx.x;
     if (trajectory >= n) return;
     const int b = sample[trajectory];
-    const double* bg = background + b * (MASS + NS);
+    const double* bg = background + b * (MASS + 2 * NS);
     Grid grid{tables + b * grid_count * (NU_DENSITY + NS), x_origin, grid_spacing, grid_count};
     const double k = wave[trajectory], tc_threshold = k / tc_epsilon;
     const double tau_g = switches[trajectory], tau_nu = switches[n + trajectory];
@@ -327,14 +328,13 @@ extern "C" __global__ void integrate(
             double contrast = out.cold * dc + out.baryon * db;
             double total = out.cold + out.baryon;
             for (int s = 0; s < NS; ++s) {
-                double density = 0.0, denominator = 0.0;
+                double density = 0.0;
                 for (int q = 0; q < NQ; ++q) {
                     const int i = nu(s, q);
                     const double we = weights[q] * energy(out.mass[s], momenta[q]);
                     density += we * interpolate(y[i], stage[i], f_nu[s * NQ + q], dy[i], h, t);
-                    denominator += we;
                 }
-                contrast += out.nu_density[s] * density / denominator;
+                contrast += out.nu_rel[s] * density;
                 total += out.nu_density[s];
             }
             const int index = (next_output * n + trajectory) * 3;

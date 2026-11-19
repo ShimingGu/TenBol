@@ -1,0 +1,222 @@
+{
+  "baseline_commit": "30376c7",
+  "prior_measurements": "hmcode_precision.json",
+  "reference": "CAMB 2.0.5 with the workload manifest settings",
+  "device": "NVIDIA H100 NVL MIG 1g.12gb",
+  "change": "Fermi–Dirac brightness-kernel density and momentum projections use the relativistic species density normalization directly.",
+  "seeded_benchmark": {
+    "seed": 20261106,
+    "cosmologies": 8,
+    "scope": "Same CUDA integrator and grid. Warm CUDA context and freshly built background and thermal history on each call.",
+    "order": [
+      "after",
+      "before",
+      "before",
+      "after"
+    ],
+    "runs": {
+      "before": [
+        {
+          "wall_seconds": 36.21620737199555,
+          "phases": {
+            "background": 8.217436617000203,
+            "cuda_solver": 27.822051809002005
+          },
+          "max_rel": 0.0405764375337907,
+          "per_cosmology_max": [
+            0.02363700378775213,
+            0.010322979000851662,
+            0.014135972457714474,
+            0.020852137455113162,
+            0.03877853753197513,
+            0.0405764375337907,
+            0.031341930812536334,
+            0.011797588744966392
+          ],
+          "worst": {
+            "cosmology": 5,
+            "k": 3.2344759148768216,
+            "z": 2.0,
+            "signed_error": -0.0405764375337907
+          }
+        },
+        {
+          "wall_seconds": 32.25111151000601,
+          "phases": {
+            "background": 7.569417945000168,
+            "cuda_solver": 24.508255741995526
+          },
+          "max_rel": 0.0405764375337907,
+          "per_cosmology_max": [
+            0.02363700378775213,
+            0.010322979000851662,
+            0.014135972457714474,
+            0.020852137455113162,
+            0.03877853753197513,
+            0.0405764375337907,
+            0.031341930812536334,
+            0.011797588744966392
+          ],
+          "worst": {
+            "cosmology": 5,
+            "k": 3.2344759148768216,
+            "z": 2.0,
+            "signed_error": -0.0405764375337907
+          }
+        }
+      ],
+      "after": [
+        {
+          "wall_seconds": 32.909686083999986,
+          "phases": {
+            "background": 8.139809986998443,
+            "cuda_solver": 24.557040998006414
+          },
+          "max_rel": 0.02277516103465671,
+          "per_cosmology_max": [
+            0.020600479699141916,
+            0.01952445450624385,
+            0.0189989650261293,
+            0.018007380726241085,
+            0.02029797401726774,
+            0.019519709551842457,
+            0.02277516103465671,
+            0.01864582321469066
+          ],
+          "worst": {
+            "cosmology": 6,
+            "k": 1.311133937421563,
+            "z": 0.0,
+            "signed_error": 0.02277516103465671
+          }
+        },
+        {
+          "wall_seconds": 35.393015307003225,
+          "phases": {
+            "background": 7.573162796994438,
+            "cuda_solver": 27.646617338003125
+          },
+          "max_rel": 0.02277516103465671,
+          "per_cosmology_max": [
+            0.020600479699141916,
+            0.01952445450624385,
+            0.0189989650261293,
+            0.018007380726241085,
+            0.02029797401726774,
+            0.019519709551842457,
+            0.02277516103465671,
+            0.01864582321469066
+          ],
+          "worst": {
+            "cosmology": 6,
+            "k": 1.311133937421563,
+            "z": 0.0,
+            "signed_error": 0.02277516103465671
+          }
+        }
+      ]
+    },
+    "median_wall_seconds": {
+      "before": 34.23365944100078,
+      "after": 34.151350695501606
+    }
+  },
+  "parameter_corners": {
+    "parameters": [
+      {
+        "h": 0.6,
+        "omega_b": 0.02,
+        "omega_c": 0.1,
+        "A_s": 1.5e-09,
+        "n_s": 0.92,
+        "m_nu_sum": 0.3,
+        "N_eff": 3.046,
+        "T_cmb": 2.7255,
+        "num_massive": 1,
+        "pivot_k": 0.05
+      },
+      {
+        "h": 0.8,
+        "omega_b": 0.0245,
+        "omega_c": 0.16,
+        "A_s": 2.7e-09,
+        "n_s": 1.02,
+        "m_nu_sum": 0.3,
+        "N_eff": 3.046,
+        "T_cmb": 2.7255,
+        "num_massive": 1,
+        "pivot_k": 0.05
+      },
+      {
+        "h": 0.6,
+        "omega_b": 0.0245,
+        "omega_c": 0.16,
+        "A_s": 2.1e-09,
+        "n_s": 0.965,
+        "m_nu_sum": 0.06,
+        "N_eff": 3.046,
+        "T_cmb": 2.7255,
+        "num_massive": 1,
+        "pivot_k": 0.05
+      },
+      {
+        "h": 0.8,
+        "omega_b": 0.02,
+        "omega_c": 0.1,
+        "A_s": 2.1e-09,
+        "n_s": 0.965,
+        "m_nu_sum": 0.06,
+        "N_eff": 3.046,
+        "T_cmb": 2.7255,
+        "num_massive": 1,
+        "pivot_k": 0.05
+      }
+    ],
+    "runs": {
+      "before": [
+        {
+          "wall_seconds": 27.290655078999407,
+          "phases": {
+            "background": 4.380865462000656,
+            "cuda_solver": 22.819273926004826
+          },
+          "max_rel": 0.08725972922259795,
+          "per_cosmology_max": [
+            0.08725972922259795,
+            0.02598238745636805,
+            0.01036648720276534,
+            0.012065554107958398
+          ],
+          "worst": {
+            "cosmology": 0,
+            "k": 5.817091329374358,
+            "z": 2.0,
+            "signed_error": -0.08725972922259795
+          }
+        }
+      ],
+      "after": [
+        {
+          "wall_seconds": 23.45172901499609,
+          "phases": {
+            "background": 4.039076974004274,
+            "cuda_solver": 19.322768844001985
+          },
+          "max_rel": 0.028273784025826698,
+          "per_cosmology_max": [
+            0.028273784025826698,
+            0.016321017659154613,
+            0.013325258924862915,
+            0.019599554813357623
+          ],
+          "worst": {
+            "cosmology": 0,
+            "k": 0.0001,
+            "z": 0.0,
+            "signed_error": -0.028273784025826698
+          }
+        }
+      ]
+    }
+  }
+}

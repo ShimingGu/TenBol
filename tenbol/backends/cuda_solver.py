@@ -6,7 +6,7 @@ from importlib.resources import files
 import numpy as np
 
 from tenbol.errors import ExecutionFailure, NumericalFailure, UnsupportedConfiguration
-from tenbol.physics.background import NU_Q, NU_W
+from tenbol.physics.background import NU_PERT_W, NU_Q
 from tenbol.physics.perturbations import initial_state
 
 
@@ -40,7 +40,8 @@ def _coefficient_tables(batch):
         nu_density,
     ), axis=2)
     background = np.column_stack((bg.grho_c0, bg.grho_b0, bg.grho_g0,
-                                  bg.grho_nu_massless0, bg.grho_v0, bg._mu0))
+                                  bg.grho_nu_massless0, bg.grho_v0, bg._mu0,
+                                  weight[:, 0, :]))
     return table, background
 
 
@@ -90,7 +91,7 @@ def evolve_cuda(batch, z_out, device=None):
             _kernel(layout)(((n + threads - 1) // threads,), (threads,), (
                 cp.asarray(initial), cp.asarray(k), cp.asarray(batch.sample[order], dtype=cp.int32),
                 cp.asarray(background), cp.asarray(table), cp.asarray(switches),
-                cp.asarray(NU_Q), cp.asarray(NU_W), cp.asarray(x),
+                cp.asarray(NU_Q), cp.asarray(NU_PERT_W), cp.asarray(x),
                 result, steps, last_x,
                 np.int32(n), np.int32(x.size), np.int32(ln_a.size),
                 np.float64(ln_a[0]), np.float64(grid_spacing), np.float64(x_start),

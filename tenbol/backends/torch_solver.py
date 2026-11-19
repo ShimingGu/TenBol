@@ -27,7 +27,8 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from tenbol.physics.perturbations import NU_W, _l_coeff
+from tenbol.physics.background import NU_PERT_W
+from tenbol.physics.perturbations import _l_coeff
 
 __all__ = ["rhs_torch", "evolve_torch", "to_device"]
 
@@ -69,10 +70,10 @@ def rhs_torch(Y, a, layout, c, settings):
     tau = c["tau"]
     grho_g, grho_r = c["grho_g"], c["grho_r"]
     grho_b, grho_c = c["grho_b"], c["grho_c"]
-    grho_spT = c["grho_nu_species"].transpose(0, 1)
+    grho_rel = c["grho_nu_rel_species"].transpose(0, 1)
     T = Y.shape[1]
     n_s, n_q = L.n_species, L.n_q
-    w = torch.as_tensor(NU_W, dtype=Y.dtype, device=Y.device)
+    w = torch.as_tensor(NU_PERT_W, dtype=Y.dtype, device=Y.device)
 
     def sc(name):
         return Y[L.scalar(name)]
@@ -84,11 +85,8 @@ def rhs_torch(Y, a, layout, c, settings):
     # ---- massive-neutrino projections ---------------------------------
     epsT = c["vnu"].reciprocal().permute(1, 2, 0)          # (S, nq, T)
     wq = w[None, :, None]
-    den = (wq * epsT).sum(dim=1)                           # (S, T)
-    clxnu = (wq * epsT * Fnu[..., 0, :]).sum(dim=1) / den
-    qnu = (wq * Fnu[..., 1, :]).sum(dim=1) / (wq * epsT).sum(dim=1)
-    dgrho_nu = (grho_spT * clxnu).sum(dim=0)
-    dgq_nu = (grho_spT * qnu).sum(dim=0)
+    dgrho_nu = (grho_rel * (wq * epsT * Fnu[..., 0, :]).sum(dim=1)).sum(dim=0)
+    dgq_nu = (grho_rel * (wq * Fnu[..., 1, :]).sum(dim=1)).sum(dim=0)
 
     dgrho_matter = grho_b * db + grho_c * dc + dgrho_nu
     dgq_matter = grho_b * vb + dgq_nu

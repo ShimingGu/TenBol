@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from tenbol.constants import GRHO_UNIT, H100_MPC
-from tenbol.physics.background import Background, CosmologyBatch
+from tenbol.physics.background import Background, CosmologyBatch, NU_PERT_W, NU_Q, fd_density_pressure
 
 camb = pytest.importorskip("camb")
 
@@ -62,12 +62,21 @@ def test_background_matches_camb():
 
 def test_neutrino_density_matches_camb_units():
     """Massless-limit and nonrelativistic-limit checks of nu_rho_p."""
-    from tenbol.physics.background import fd_density_pressure as _fd_density_pressure
-    rho, p = _fd_density_pressure(np.array([1e-6, 1e-3]))
+    rho, p = fd_density_pressure(np.array([1e-6, 1e-3]))
     assert np.allclose(rho, 1.0, atol=1e-9)
     assert np.allclose(p, 1.0 / 3.0, atol=1e-9)
     mu = np.array([1e3])
-    rho, p = _fd_density_pressure(mu)
+    rho, p = fd_density_pressure(mu)
     # nonrelativistic: rho = 0.3174 mu, p = rho/(3) * <v^2>/... -> p ~ (5 zeta5/(2 zeta3))/mu^2 * rho
     expected = 3 * 1.2020569031595942 / (2 * 7 * np.pi**4 / 120) * 1e3
     assert abs(rho[0] / expected - 1) < 2e-3
+
+
+def test_neutrino_brightness_projection_relativistic_limits():
+    # A unit brightness perturbation changes the relativistic energy density
+    # by one and the nonrelativistic particle density by three quarters.
+    assert np.sum(NU_PERT_W) == pytest.approx(1.0, abs=1e-5)
+    mass = 1e5
+    rho, _ = fd_density_pressure(mass)
+    density_contrast = np.sum(NU_PERT_W * np.hypot(1.0, mass / NU_Q)) / rho
+    assert density_contrast == pytest.approx(0.75, abs=1e-5)

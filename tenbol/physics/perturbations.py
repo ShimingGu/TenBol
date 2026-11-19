@@ -39,7 +39,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..errors import NumericalFailure
-from .background import NU_Q, NU_W
+from .background import NU_PERT_W, NU_Q
 from .state import SCALARS, StateLayout
 
 # Dormand-Prince 5(4) coefficients
@@ -191,7 +191,9 @@ class PerturbationBatch:
         mu = np.maximum(a[:, None] * self.mu0, 1e-12)
         rho = np.exp(self._rho_spl(np.log(mu)))
         pnu = np.exp(self._p_spl(np.log(mu)))
-        grho_nu_mass = np.sum(self.grho_nu_unit * self.degeneracy * rho, axis=1) * inv_a**2
+        grho_nu_rel = self.grho_nu_unit * self.degeneracy * (inv_a ** 2)[:, None]
+        grho_nu_species = grho_nu_rel * rho
+        grho_nu_mass = np.sum(grho_nu_species, axis=1)
         p_nu_mass = np.sum(self.grho_nu_unit * self.degeneracy * pnu, axis=1) * inv_a**2
         grho_c = self.grho_c0 * inv_a
         grho_b = self.grho_b0 * inv_a
@@ -225,8 +227,7 @@ class PerturbationBatch:
             "taurend_nu": self._taurend_nu,
             "kappa": kappa, "dopacity": dopacity, "cs2": cs2, "grho_c": grho_c, "grho_b": grho_b,
             "grho_g": grho_g, "grho_r": grho_r, "grho_nu_mass": grho_nu_mass,
-            "grho_nu_species": (self.grho_nu_unit * self.degeneracy * rho)
-            * (inv_a ** 2)[:, None],
+            "grho_nu_species": grho_nu_species, "grho_nu_rel_species": grho_nu_rel,
             "k": self.k, "vnu": vnu,
         }
 
@@ -291,11 +292,8 @@ def initial_state(batch: "PerturbationBatch", a0: float):
     # left at the zero from L.allocate(), which made clxnu and qnu identically
     # zero for all time: massive neutrinos then contributed nothing to dgrho or
     # dgq, so their free-streaming suppression of high-k growth was missing.
-    # The weighting in rhs is
-    #     clxnu = sum_q w_q epsT F_0 / sum_q w_q epsT
-    #     qnu   = sum_q w_q F_1    / sum_q w_q epsT
-    # so F_0 = dg reproduces clxnu = dg and F_1 = qr * epsT reproduces qnu = qr,
-    # matching the photon/massless-neutrino values at early times.
+    # In the relativistic limit the perturbation weights sum to one, so the
+    # brightness moments reduce to their photon and massless-neutrino values.
     n_s, n_q, n_l = L.n_species, L.n_q, L.lmax_nu + 1
     epsT0 = np.transpose(1.0 / c0_vnu(batch, a0), (1, 2, 0))      # (S, nq, T)
     Fnu0 = np.zeros((n_s, n_q, n_l, T))
@@ -347,10 +345,9 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     kk2_tab = (k[None, :] * (_ls[:, None] + 1.0)) / _den[:, None]
     grho_g, grho_r = c["grho_g"], c["grho_r"]
     grho_b, grho_c = c["grho_b"], c["grho_c"]
-    grho_spT = c["grho_nu_species"].T                     # (S, T)
+    grho_rel = c["grho_nu_rel_species"].T                 # (S, T)
     T = batch.T
     n_s, n_q = L.n_species, L.n_q
-    w = NU_W
 
     dc = Y[L.scalar("dc")]
     db = Y[L.scalar("db")]
@@ -366,16 +363,9 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
 
     # ---- massive-neutrino projections ---------------------------------
     epsT = np.transpose(1.0 / c["vnu"], (1, 2, 0))        # (S, nq, T)
-    wq = w[None, :, None]
-    den = np.sum(wq * epsT, axis=1)                       # (S, T)
-    clxnu = np.sum(wq * epsT * Fnu[..., 0, :], axis=1) / den
-    # CAMB normalises the massive-neutrino heat flux by the same weighted
-    # energy sum as the density (Nu_Integrate_L01: fnu/rhonu), i.e. by
-    # sum(w * eps), not by sum(w); the two differ whenever the modes are
-    # relativistic.
-    qnu = np.sum(wq * Fnu[..., 1, :], axis=1) / np.sum(wq * epsT, axis=1)
-    dgrho_nu = np.sum(grho_spT * clxnu, axis=0)
-    dgq_nu = np.sum(grho_spT * qnu, axis=0)
+    wq = NU_PERT_W[None, :, None]
+    dgrho_nu = np.sum(grho_rel * np.sum(wq * epsT * Fnu[..., 0, :], axis=1), axis=0)
+    dgq_nu = np.sum(grho_rel * np.sum(wq * Fnu[..., 1, :], axis=1), axis=0)
 
     dgrho_matter = grho_b * db + grho_c * dc + dgrho_nu
     dgq_matter = grho_b * vb + dgq_nu
@@ -675,15 +665,11 @@ def _record_rows(rec, Y, c, rec_rows, idx, layout: StateLayout):
     n_s, n_q, n_l = layout.n_species, layout.n_q, layout.lmax_nu + 1
     Fnu = Y[layout.offsets["Fnu"]].reshape(n_s, n_q, n_l, Y.shape[1])
     epsT = np.transpose(1.0 / c["vnu"], (1, 2, 0))
-    wq = NU_W[None, :, None]
-    den = np.sum(wq * epsT, axis=1)
-    clxnu = np.sum(wq * epsT * Fnu[..., 0, :], axis=1) / den
-    # Expose the neutrino density contrast: nu_growth_test shows the whole
-    # remaining linear residual is neutrino-driven (m_nu = 0 collapses the
-    # z = 30 -> 0 growth offset from +1.13% to +0.05%), and there is no way to
-    # diagnose that without seeing clxnu next to CAMB's delta_neutrino.
-    rec["clxnu"][rec_rows, idx] = clxnu[0] if clxnu.shape[0] == 1 else clxnu.mean(axis=0)
-    dgrho_nu = np.sum(np.asarray(grho).T * clxnu, axis=0)
+    wq = NU_PERT_W[None, :, None]
+    density = c["grho_nu_rel_species"].T * np.sum(wq * epsT * Fnu[..., 0, :], axis=1)
+    clxnu = np.divide(density, grho.T, out=np.zeros_like(density), where=grho.T > 0.0)
+    rec["clxnu"][rec_rows, idx] = clxnu.mean(axis=0) if n_s else 0.0
+    dgrho_nu = np.sum(density, axis=0)
     rec["dm"][rec_rows, idx] = (grho_c * Y[layout.scalar("dc")]
                                 + grho_b * Y[layout.scalar("db")]
                                 + dgrho_nu) / (grho_c + grho_b + np.sum(grho, axis=1))

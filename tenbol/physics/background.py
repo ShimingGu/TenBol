@@ -59,6 +59,11 @@ NU_W = _LAG_W * _LAG_Q**2 / (1.0 + np.exp(-_LAG_Q))
 NU_W_SUM = float(np.sum(NU_W))
 assert abs(NU_W_SUM / 1.8030853544 - 1.0) < 1e-6, NU_W_SUM
 
+# The brightness hierarchy absorbs the logarithmic derivative of the
+# Fermi-Dirac occupation. Its stress-energy kernel is proportional to
+# q^4 f(1-f)/4, normalized by the relativistic energy moment.
+NU_PERT_W = _LAG_W * NU_Q ** 4 / (4.0 * FD_MOMENT3 * (1.0 + np.exp(-NU_Q)) ** 2)
+
 
 def fd_density_pressure(mu):
     """``(rho, p)`` of a thermal massive eigenstate in units of one massless
