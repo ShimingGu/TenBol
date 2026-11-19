@@ -69,6 +69,9 @@ class PerturbationSettings:
     tc_epsilon: float = 0.1
     rsa_ktau: float = 30.0
     rsa_ktau_nu: float = 30.0
+    # Moment at which the frozen massless-neutrino closure starts damping; see
+    # the nu_free block in ``rhs``.
+    nu_freeze_from_l: int = 0
     rsa_ktau_r: float = 30.0
     # CAMB applies the late radiation truncation only for k > 0.03 /Mpc
     # (DoLateRadTruncation with latePhotSwitchBoost); below that the photon
@@ -467,9 +470,20 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     dY[L.scalar("vb")] = np.where(tcu, vb_tc, vb_full)
     vb_e = dY[L.scalar("vb")]
 
+    # CAMB (equations.f90:2537-2539) uses ONE photon dipole equation for both the
+    # tight-coupling and free-streaming branches:
+    #   qgdot = 4/3*(-vbdot - adotoa*vb + delta_p_b*k)/pb43
+    #         + denlk(1)*clxg - denlk2(1)*pig
+    # with denlk(1) = k/3 and denlk2(1) = denl(1)*k*Kf(1)*2 = 2k/3 (denl(1)=1/3).
+    # Expanding the free-streaming branch (substituting vbdot and using
+    # photbar/pb43 = 3/4) gives
+    #   qg' = -kappa*(qg - 4/3*vb) + k/3*dg - (2k/3)*pig
+    # The quadrupole coefficient is 2/3, NOT 4/3.  This branch carried 4/3, which
+    # doubles the quadrupole's drive on the dipole through the whole post-
+    # recombination era - exactly where the BAO wiggle is built.
     qg_tc = (4.0 / 3.0 * (-vb_e - h * vb + delta_p_b * k) / pb43
              + k / 3.0 * dg_e - 2.0 / 3.0 * k * pig_tc)
-    qg_full = k / 3.0 * dg_e - 4.0 / 3.0 * k * pig + 4.0 / 3.0 * kap_notc * (vb - 0.75 * qg_e)
+    qg_full = k / 3.0 * dg_e - 2.0 / 3.0 * k * pig + 4.0 / 3.0 * kap_notc * (vb - 0.75 * qg_e)
     dY[L.scalar("qg")] = np.where(rsa_g, 0.0, np.where(tcu, qg_tc, qg_full))
 
     polter = pig / 10.0 + 0.6 * Y[L.g(2)]
@@ -486,10 +500,13 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
         dY[L.fg(l)] = np.where(
             clamp, 0.0,
             kk * Y[L.fg(l - 1)] - kk2 * Y[L.fg(l + 1)] - kappa * Y[L.fg(l)])
-    kk = kk_tab[L.lmax_g]
+    # CAMB (equations.f90:2557) truncates with PLAIN k, not denlk(lmaxg):
+    #   ayprime(ix) = k*ay(ix-1) - (lmaxg+1)*cothxor*ay(ix) - opacity*ay(ix)
+    # denlk(lmaxg) = k*lmaxg/(2*lmaxg+1) is 0.49*k at lmaxg=24, so using it here
+    # halved the transport of power into the highest multipole.
     dY[L.fg(L.lmax_g)] = np.where(
         clamp, 0.0,
-        kk * Y[L.fg(L.lmax_g - 1)] - (L.lmax_g + 1) * Y[L.fg(L.lmax_g)] * inv_tau
+        k * Y[L.fg(L.lmax_g - 1)] - (L.lmax_g + 1) * Y[L.fg(L.lmax_g)] * inv_tau
         - kappa * Y[L.fg(L.lmax_g)])
 
     # ---- polarization --------------------------------------------------
@@ -497,7 +514,11 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
                           -kappa * (Y[L.g(2)] - polter) - k / 3.0 * Y[L.g(3)])
     for l in range(3, L.lmax_pol):
         kk = kk_tab[l]
-        polfack = (l + 3.0) * (l - 1.0) / (l + 1.0) * k
+        # CAMB (equations.f90:543, 1932): polfack(j) = polfac(j)*k*Kf(j)*denl(j)
+        #   polfac(j) = (j+3)(j-1)/(j+1),  denl(j) = 1/(2j+1)
+        # The 1/(2j+1) was missing here, making polfack too large by (2l+1) -
+        # a factor 7 already at l=3.
+        polfack = (l + 3.0) * (l - 1.0) / (l + 1.0) * k / (2.0 * l + 1.0)
         dY[L.g(l)] = np.where(
             clamp, 0.0,
             -kappa * Y[L.g(l)] + kk * Y[L.g(l - 1)] - polfack * Y[L.g(l + 1)])
@@ -577,7 +598,17 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     _ktau_nu_mass = np.maximum(s.rsa_ktau_nu, k * c["taurend_nu"])
     nu_free = (ktau > _ktau_nu_mass) & (k > s.rsa_kmin_r)
     if np.any(nu_free):
-        dFnu = np.where(nu_free[None, None, None, :], 0.0, dFnu)
+        # Freeze the closure from ``nu_freeze_from_l`` upwards.  Freezing the
+        # WHOLE ladder (the default, l = 0) also freezes delta_nu itself, which
+        # leaves it parked at the value it had when the switch fired and lets it
+        # decay no further - too much gravitational source.  Dropping the freeze
+        # entirely overshoots the other way (measured: k=0.13 growth offset
+        # +1.08% frozen vs -0.27% free, against a truth in between), so the
+        # right statement is that the low moments must keep evolving and only
+        # the runaway cascade is what needs the sink.
+        l_fr = max(int(s.nu_freeze_from_l), 0)
+        m = nu_free[None, None, None, :]
+        dFnu[..., l_fr:, :] = np.where(m, 0.0, dFnu[..., l_fr:, :])
     dY[L.offsets["Fnu"]] = dFnu.reshape(L.offsets["Fnu"].stop - L.offsets["Fnu"].start, T)
 
     # d/dtau -> d/dln a
@@ -656,6 +687,11 @@ def _record_rows(rec, Y, c, rec_rows, idx, layout: StateLayout):
     wq = NU_W[None, :, None]
     den = np.sum(wq * epsT, axis=1)
     clxnu = np.sum(wq * epsT * Fnu[..., 0, :], axis=1) / den
+    # Expose the neutrino density contrast: nu_growth_test shows the whole
+    # remaining linear residual is neutrino-driven (m_nu = 0 collapses the
+    # z = 30 -> 0 growth offset from +1.13% to +0.05%), and there is no way to
+    # diagnose that without seeing clxnu next to CAMB's delta_neutrino.
+    rec["clxnu"][rec_rows, idx] = clxnu[0] if clxnu.shape[0] == 1 else clxnu.mean(axis=0)
     dgrho_nu = np.sum(np.asarray(grho).T * clxnu, axis=0)
     rec["dm"][rec_rows, idx] = (grho_c * Y[layout.scalar("dc")]
                                 + grho_b * Y[layout.scalar("db")]
@@ -695,7 +731,7 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
     a_out = np.sort(1.0 / (1.0 + z_out))
     n_out = len(a_out)
     rec = {k: np.full((T, n_out), np.nan) for k in
-           ("dc", "db", "dg", "dr", "vb", "qg", "qr", "etak", "dm")}
+           ("dc", "db", "dg", "dr", "vb", "qg", "qr", "etak", "dm", "clxnu")}
 
     events = _event_times(batch, s.a_start, a_end)
     targets = np.sort(np.vstack([np.where(np.isfinite(events[n][:, 0]), events[n][:, 0], np.inf)

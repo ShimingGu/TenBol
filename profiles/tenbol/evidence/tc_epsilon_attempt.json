@@ -1,0 +1,28 @@
+{
+  "attempt": "adopt CAMB's tight-coupling epsilon instead of our constant 0.1",
+  "motivation": {
+    "camb_source": "equations.f90:186,539,1940-1950",
+    "formula": "ep0 = 1e-2; epsw = 100/tau0; if k > epsw*5 then ep = ep0*5/AccuracyBoost*0.65 else ep = ep0; if (second_order_tightcoupling) ep = ep*2; TightSwitchoffTime = min(tight_tau, OpacityToTime(k/ep))",
+    "values_at_the_pinned_reference": "AccuracyBoost = 2.0, so high k gives ep = 0.0325 and low k gives 0.02",
+    "ours": "tc_epsilon = 0.1, i.e. tcu fires at kappa > k/0.1 = 10k against CAMB's 30.8k (high k) or 50k (low k) - we stay tight-coupled 3-5x longer",
+    "why_it_looked_promising": "the z-scan showed the error is +0.10% at z=1000 and +1.51% by z=100, so it accumulates exactly through recombination, which is the era this threshold governs"
+  },
+  "measured": {
+    "tc_eps_0.1_current": {"k_0.17_z_0": 1.02490, "k_0.17_z_100": 1.01510, "k_0.17_z_1000": 1.00100, "k_3.0_z_0": 1.00565, "k_3.0_z_100": 0.99575, "k_3.0_z_1000": 0.99732},
+    "tc_eps_0.05": {"k_0.17_z_0": 1.02719, "k_0.17_z_100": 1.01736, "k_0.17_z_1000": 1.00150, "k_3.0_z_0": 1.7e210, "k_3.0_z_100": 1.7e210, "k_3.0_z_1000": 1.6e210}
+  },
+  "verdict": "REFUTED, and worse than neutral.",
+  "two_ways_it_fails": [
+    "the low-k ratio gets WORSE, not better: 1.02490 -> 1.02719 at k=0.17, z=0",
+    "the high-k trajectory DIVERGES to 1.7e210 as soon as the threshold is halved, so the remaining two values (0.0325, 0.02) were not run - they would be worse still"
+  ],
+  "what_this_means": "our tight-coupling implementation must differ from CAMB's in some compensating way. If it did not, matching CAMB's epsilon would improve the ratio rather than destroy it. Lowering epsilon ends tight coupling earlier, and something in our free-streaming photon treatment cannot absorb that - most likely the same second-order terms whose EXIT values were shown to be harmful in the previous attempt.",
+  "note_on_two_consecutive_failures": "the second-order EXIT values and now the epsilon both come from the same block of CAMB's source. Both fail. That is weak evidence that the discrepancy is not in the tight-coupling onset/exit bookkeeping at all, but somewhere the two code paths are otherwise identical - which points back at the shared evolution terms rather than at the switching logic.",
+  "no_change_made": "tc_epsilon stays at 0.1. Nothing was committed for this attempt; the evidence file is the only artefact.",
+  "baseline_unchanged": {
+    "median": 1.00742,
+    "max_abs_dev": 0.02490,
+    "at_k": 0.170,
+    "target": 0.005
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "attempt": "test whether Silk damping can explain the BAO wiggle amplitude excess",
+  "the_contradiction_this_resolves": "Two earlier readings disagreed. The kappa perturbation experiment said +-2% opacity moves the BAO peak by only 0.039pp, while the residual decomposition said the wiggle is 1.4% too strong with the excess growing with k - which is the signature of damping. This experiment settles it.",
+  "method": "scale kappa by S in PerturbationBatch.coefficients and scale tc_epsilon by 1/S, so that the tight-coupling switch tcu = kappa > k/tc_epsilon fires at exactly the same time and only the damping changes. Measured the P(k=0.17)/P_CAMB ratio at z=0 for S = 2.00, 1.20, 1.00, 0.80, 0.50.",
+  "measured": {
+    "S=2.00": 1.01623,
+    "S=1.20": 1.02186,
+    "S=1.00": 1.02490,
+    "S=0.80": 1.02987,
+    "S=0.50": 1.10397
+  },
+  "sensitivity": {
+    "local": "between S=0.80 and S=1.20, ln(1.2/0.8) = 0.405 and the ratio falls by 0.00801, i.e. -1.93% per unit ln kappa",
+    "cross_check_against_the_earlier_experiment": "the earlier reading was that +-2% kappa moves the peak by 0.039pp. ln(1.02) * 1.93% = 0.038pp. THE TWO AGREE TO TWO SIGNIFICANT FIGURES.",
+    "non_linearity": "S=0.50 breaks the local trend (+7.715% against -1.93% per ln kappa predicting +1.34%), which is expected: halving the opacity is far outside the linear regime for damping."
+  },
+  "verdict": "SILK DAMPING IS REFUTED as the explanation for the wiggle excess.",
+  "the_arithmetic_that_refutes_it": "to remove the 2.49% excess at the BAO peak the damping would have to be strengthened by 2.49/1.93 = 1.29 in ln kappa, i.e. opacity multiplied by 3.6. That is not a small correction to a recombination history; it would wreck the damping tail everywhere else and would have shown up long ago in the high-k ratios, which sit at +0.57..0.77%.",
+  "what_was_actually_wrong": "not the kappa measurement - that was right all along - but the INFERENCE drawn from it in residual_decomposition.json. An amplitude excess that grows with k is consistent with weak damping, but consistency is not causation, and the sensitivity is two orders of magnitude too small to carry it.",
+  "consequence_for_the_decomposition": "component 2 (the ~1.4% BAO wiggle excess) survives as a measurement but loses its proposed cause. It is now an unexplained amplitude defect with a known shape and no known mechanism.",
+  "what_is_still_standing": {
+    "smooth_tilt": "+1.25..1.50% low k easing to +0.57..0.85% high k, unexplained",
+    "bao_wiggle_excess": "about 1.4%, growing slightly with k, mechanism unknown",
+    "target": "0.5%, currently max|dev| 2.49% at k=0.17"
+  },
+  "no_code_changed": "the kappa scaling was done by monkeypatching inside the diagnostic only; nothing in the repository was modified.",
+  "patterns_worth_noting": "this is the fifth hypothesis from the acoustic sector to fail (second-order TC exit values, tc_epsilon, baryon lag, cs2, and now Silk damping). The acoustic amplitude defect is real and reproducible but is not being produced by anything that has been varied so far."
+}

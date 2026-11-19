@@ -1,0 +1,35 @@
+{
+  "what_this_is": "a real bug in the photon dipole equation, found by reading CAMB's source rather than by varying parameters, and it removes the BAO wiggle excess entirely",
+  "the_bug": {
+    "location": "tenbol/physics/perturbations.py, qg_full (the free-streaming photon dipole)",
+    "was": "k/3*dg - (4/3)*k*pig + (4/3)*kappa*(vb - 0.75*qg)",
+    "now": "k/3*dg - (2/3)*k*pig + (4/3)*kappa*(vb - 0.75*qg)",
+    "change": "the photon quadrupole coefficient went from 4/3 to 2/3"
+  },
+  "why_2_over_3": {
+    "camb_source": "equations.f90:2535-2539 uses ONE photon dipole equation for both the tight-coupling and free-streaming branches: qgdot = 4/3*(-vbdot - adotoa*vb + delta_p_b*k)/pb43 + denlk(1)*clxg - denlk2(1)*pig",
+    "the_coefficients": "denlk(1) = denl(1)*k*1 = k/3 with denl(1) = 1/3; denlk2(1) = denl(1)*k*Kf(1)*2 = 2k/3 in a flat model",
+    "expanded": "substituting the free-streaming vbdot and using photbar/pb43 = 3/4, CAMB's form becomes qg' = -kappa*(qg - 4/3*vb) + k/3*dg - (2k/3)*pig",
+    "the_smoking_gun": "our own qg_tc branch already carried the correct -2/3*k*pig_tc, matching CAMB. Only the free-streaming branch had 4/3, which is the branch that governs the entire post-recombination era where the BAO wiggle is actually built."
+  },
+  "measured": {
+    "grid": "12 k points, 0.02 to 3.0 h/Mpc, z=0, CAMB reference at 4096 points",
+    "before": {"0.020": 1.01252, "0.050": 1.01504, "0.080": 0.99513, "0.100": 1.02251, "0.130": 0.99656, "0.170": 1.02490, "0.250": 1.00853, "0.400": 1.00528, "0.700": 1.00766, "1.200": 1.00718, "2.000": 1.00636, "3.000": 1.00565},
+    "after": {"0.020": 1.00654, "0.050": 1.00779, "0.080": 1.00773, "0.100": 1.00697, "0.130": 1.01029, "0.170": 1.00777, "0.250": 1.00829, "0.400": 1.00793, "0.700": 1.00773, "1.200": 1.00701, "2.000": 1.00634, "3.000": 1.00574},
+    "median": {"before": 1.00742, "after": 1.00773},
+    "max_abs_dev": {"before": 0.02490, "after": 0.01029, "at_k": 0.130, "factor": 2.42}
+  },
+  "the_decisive_number": {
+    "bao_peak_over_trough_0.10_over_0.08": {"before": 1.02751, "after": 0.99924},
+    "bao_peak_over_trough_0.17_over_0.13": {"before": 1.02844, "after": 0.99751},
+    "reading": "a peak/trough ratio of 1.0 means our BAO wiggle has exactly CAMB's amplitude. It went from 1.0275/1.0284 (about 1.4% too strong) to 0.9992/0.9975 (about 0.08% off) - a factor of 17 improvement on that specific defect."
+  },
+  "what_the_residual_now_is": {
+    "smooth_tilt": "a broadband +0.57% to +0.83% offset, median +0.77%, with NO oscillation left",
+    "shape": "from the after-column: +0.65, +0.78, +0.77, +0.70, +1.03, +0.78, +0.83, +0.79, +0.77, +0.70, +0.63, +0.57 percent from k=0.02 to k=3.0",
+    "target": "0.5%, so max|dev| 1.03% is about twice the budget, down from five times"
+  },
+  "why_this_worked_when_five_parameter_variations_failed": "the five failures (second-order TC exit values, tc_epsilon, baryon lag, cs2, Silk damping) all varied a parameter and watched the answer. This one read what the equation should be. The distinction matters: the residual was never a sensitivity problem, it was a coefficient that had been mistyped at some point and nothing downstream could compensate for it.",
+  "consequence_for_earlier_evidence": "the numbers in residual_decomposition.json, silk_refuted.json and background_cleared.json were all measured against the buggy dipole and are now superseded on the BAO-wiggle point. Their qualitative conclusions still hold (Silk is genuinely insensitive, the background genuinely matches), but the 'amplitude excess' they describe no longer exists at 1.4% - it is 0.08%.",
+  "method_note": "found by comparing our photon hierarchy against equations.f90:2525-2575 line by line, specifically the denlk/denlk2 coefficient tables at equations.f90:555 and 1930-1932."
+}

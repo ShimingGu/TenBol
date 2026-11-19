@@ -1,0 +1,41 @@
+{
+  "attempt": "port CAMB's SECOND-ORDER tight-coupling EXIT values into perturbations.evolve",
+  "motivation": "equations.f90:352-370 shows CAMB uses the second-order branch because second_order_tightcoupling is a compile-time .true. It sets the photon octupole y(g_ix+3) and polarization l=2,3 from pig and pigdot, whereas our code installed only the first-order values and never touched fg(3) at all. Since this acts on the acoustic amplitude exactly where the BAO peak sits, it was a plausible source of the +2.5% peak error.",
+  "what_was_added": [
+    "pigdot_tc in the tight-coupling branch (equations.f90:2512-2516), captured for the exit",
+    "Y[fg(3)] = (3/7)*pig*(k/opacity)*(1+dopacity/opacity^2) - (3/7)*pigdot*(k/opacity)^2",
+    "Y[g(2)] = pig/4 + pigdot/opacity*(-5/8 - (25/16)*dopacity/opacity^2) + pig*(k/opacity)^2*(-5/56)",
+    "Y[g(3)] = (3/7)*(k/opacity)*Y[g(2)]*(1+dopacity/opacity^2) + (3/7)*(k/opacity)^2*(pigdot/4)*(1+(5/2)*dopacity/opacity^2)*(-1)"
+  ],
+  "measured_result": {
+    "grid": "12 k points from 0.02 to 3.0 h/Mpc, z=0, reference CAMB with 4096 points",
+    "with_patch": {
+      "k_0.05_ratio": 0.00533,
+      "k_0.05_deviation": "-99.47%",
+      "k_0.17_ratio": 1.02490,
+      "median": 1.00742,
+      "max_abs_dev": 0.99467
+    },
+    "baseline_same_grid_no_patch": {
+      "k_0.05_ratio": 1.01504,
+      "k_0.05_deviation": "+1.50%",
+      "k_0.17_ratio": 1.02490,
+      "median": 1.00742,
+      "max_abs_dev": 0.02490
+    }
+  },
+  "verdict": "THE PATCH IS HARMFUL AND WAS DROPPED (git stash drop).",
+  "how_this_was_established": "the median is bit-identical between the two runs (1.00742 both), and every k from 0.17 upward is bit-identical too. Only k=0.02..0.13 moved, and k=0.05 collapsed to 0.00533. A change that alters nothing except to destroy one low-k point is a numerical defect, not a physics improvement.",
+  "likely_cause_not_chased": "our pigdot is computed from qg_e and the RSA-substituted qgdot_tc, while CAMB's EV%pigdot comes from a different stage of its own tight-coupling block. The k/opacity weighting also becomes extreme at early times when opacity is huge, and our kap_safe floor may not reproduce CAMB's exact evaluation point. Any of these could produce the collapse; none was verified.",
+  "what_this_leaves": {
+    "baseline_linear_accuracy_on_this_grid": {
+      "median": 1.00742,
+      "max_abs_dev": 0.02490,
+      "at_k": 0.170,
+      "shape": "BAO peak top +2.49%, high-k tail +0.53..0.77%, low k +1.25..1.50%"
+    },
+    "target": 0.005,
+    "gap": "max|dev| is 5x the target, and the worst point is the BAO peak top, which is the same place it has been for many attempts"
+  },
+  "cumulative_note": "this is the second attempt in a row that was motivated by the CAMB source and failed. The first was the constant RSA threshold, which was a genuine bug in the torch port and was kept. This one is different: it was a change to the reference numpy solver, and it broke it. The distinction matters - the torch fixes were correcting a port that had drifted, whereas this was altering the thing everything else is validated against."
+}

@@ -1,0 +1,26 @@
+{
+  "what_changed_since_the_last_z_scan": "the photon dipole coefficient fix (commit 0f7e115) is now in place, so this scan measures the residual of the CORRECTED solver, not the old one",
+  "grid": "k = 0.13, 0.30, 3.0 h/Mpc, z = 0, 3, 30, 300, 1000, CAMB reference at 4096 points",
+  "ratios": {
+    "z=0": {"k_0.13": 1.01029, "k_0.30": 1.00807, "k_3.0": 1.00574},
+    "z=3": {"k_0.13": 1.00520, "k_0.30": 1.00260, "k_3.0": 1.00013},
+    "z=30": {"k_0.13": 0.99946, "k_0.30": 0.99676, "k_3.0": 0.99428},
+    "z=300": {"k_0.13": 1.00154, "k_0.30": 0.99923, "k_3.0": 0.99674},
+    "z=1000": {"k_0.13": 1.00033, "k_0.30": 0.99997, "k_3.0": 0.99740}
+  },
+  "the_structure_this_reveals": {
+    "segment_1_z1000_to_z30": "the ratio FALLS from about 1.000 to 0.994..0.999, i.e. over this stretch our growth runs slightly SLOW",
+    "segment_2_z30_to_z0": "the ratio RISES by about +1.1% at ALL THREE k, uniformly, i.e. over this stretch our growth runs slightly FAST. P ~ D^2, so that is 0.55% in the growth factor.",
+    "net": "+0.57..1.03%, which is what the 12-point grid measures"
+  },
+  "why_the_two_segments_matter": "before the dipole fix the ratio grew monotonically from z=1000 to z=0 (+0.10% to +2.49%), which pointed at a single accumulating error. Now the two segments have OPPOSITE signs, which means there are (at least) two small competing effects rather than one large one. That is a different problem from the one the earlier evidence describes.",
+  "the_late_time_leg_cannot_be_the_background": {
+    "H_z_matches_to": 1.008e-06,
+    "density_fractions_match_to": "8 printed digits",
+    "record": "profiles/tenbol/evidence/background_cleared.json",
+    "consequence": "at z<30 radiation is negligible and the growth factor is fixed by H(a) and Omega_m(a) alone. Both are exact, so a 0.55% error in D over z=30->0 has to come from the perturbation equations' late-time limit - the source terms feeding the metric potentials (dgrho, dgq), not the expansion."
+  },
+  "candidate_not_yet_tested": "the radiation streaming approximation. At z<30 every mode in the workload has k*tau >> 30, so the photon and neutrino hierarchies are in RSA for the whole late-time leg, and RSA is exactly the algebraic replacement of the potentials' radiation source. Our RSA formulas were compared against equations.f90:2389-2395 and match in form (z = (0.5*dgrho_matter/k + etak)/h, dg = -4*dz/k - 4/k*kappa*(vb+z), qg = -4z/3), but the neutrino branch and the exact point where each species leaves the hierarchy have not been verified numerically against CAMB.",
+  "status_against_target": {"target": 0.005, "max_abs_dev": 0.01029, "at": "k=0.13, z=0", "verdict": "about 2x over, down from 5x before the dipole fix"},
+  "note": "this is a measurement, not a fix. Nothing in the repository was modified for it."
+}

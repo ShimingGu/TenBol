@@ -1,0 +1,24 @@
+{
+  "what_this_is": "where in the massive-neutrino ladder the frozen closure should start, parameterised as nu_freeze_from_l",
+  "why_it_matters": "neutrino_isolated.json shows m_nu = 0 removes the entire remaining linear residual (+1.13% growth offset -> +0.05%), so the neutrino ladder is the whole remaining error. The current code freezes every moment from l = 0 upward once k*tau > max(30, k*taurend_nu), which also parks delta_nu itself at its switch value.",
+  "scan": {
+    "grid": "k = 0.13 and 0.30 h/Mpc, z = 0 and 30, one cosmology, m_nu = 0.06 eV",
+    "metric": "growth offset = ratio(z=0) - ratio(z=30), where ratio = P_ours/P_CAMB",
+    "rows": [
+      {"nu_freeze_from_l": 0, "k0.13": {"z0": 1.01027, "z30": 0.99945, "growth": 0.01082}, "k0.30": {"z0": 1.00810, "z30": 0.99679, "growth": 0.01131}, "note": "current behaviour"},
+      {"nu_freeze_from_l": 1, "k0.13": {"z0": 1.01571, "z30": 1.00007, "growth": 0.01564}, "k0.30": {"z0": 1.01353, "z30": 0.99735, "growth": 0.01617}, "note": "WORSE: keeping only delta_nu live while pinning the heat flux at its switch value feeds delta_nu forever"},
+      {"nu_freeze_from_l": 2, "k0.13": {"z0": 0.99757, "z30": 0.99948, "growth": -0.00192}, "k0.30": {"z0": 0.99278, "z30": 0.99674, "growth": -0.00395}, "note": "best of the frozen variants: delta_nu and the heat flux keep evolving, only the cascade gets the sink"},
+      {"nu_freeze_from_l": 3, "k0.13": {"growth": -0.00306}, "k0.30": {"growth": -0.00447}},
+      {"nu_freeze_from_l": 4, "k0.13": {"growth": -0.00247}, "k0.30": {"growth": -0.00414}},
+      {"nu_freeze_from_l": 99, "k0.13": {"z0": 0.99682, "z30": 0.99947, "growth": -0.00265}, "k0.30": {"z0": 0.99248, "z30": 0.99673, "growth": -0.00425}, "note": "no freeze at all; unstable at k >= 2 /Mpc"}
+    ]
+  },
+  "reading": "the truth sits between l_fr = 0 (+1.1%) and l_fr = 2 (-0.2/-0.4%), and l_fr = 2 is the only physically defensible option that is not also the worst. Freezing from l = 0 parks delta_nu at a value that is too large (too much gravitational source); freezing from l = 2 lets it keep decaying the way a free-streaming species should.",
+  "what_is_NOT_established": [
+    "l_fr = 2 was NOT confirmed on the full 12-point grid. The grid runs were started repeatedly and killed before producing output, so no full-grid max|dev| for l_fr = 2 exists.",
+    "l_fr = 2 was not checked for stability at high k. l_fr = 99 diverges at k = 2.01 /Mpc (a = 3.9e-2), so the freeze is load-bearing there and the same risk applies to any weaker freeze.",
+    "no adoption decision is recorded: nu_freeze_from_l defaults to 0, i.e. the shipped behaviour is unchanged by this commit."
+  ],
+  "why_the_parameterisation_is_still_committed": "it defaults to the existing behaviour (l = 0), the suite passes, and the scan is what makes the next attempt cheap. An uncommitted editing artefact would be worse than a committed, documented knob.",
+  "next_step": "run the l_fr = 2 grid and the k >= 2 stability check; if it holds, adopt it and re-measure matter_power_nl, since the linear residual is amplified ~4x through the nonlinear chain (nonlinear_end_to_end.json)."
+}

@@ -1,0 +1,44 @@
+{
+  "what_this_is": "a decomposition of the 12-point linear residual into its two components, plus the later correction that removed the mechanism originally proposed for the second one",
+  "data": {
+    "grid": "12 k points, 0.02 to 3.0 h/Mpc, z=0, CAMB reference at 4096 points",
+    "ratios": {
+      "0.020": 1.01252, "0.050": 1.01504, "0.080": 0.99513, "0.100": 1.02251,
+      "0.130": 0.99656, "0.170": 1.02490, "0.250": 1.00853, "0.400": 1.00528,
+      "0.700": 1.00766, "1.200": 1.00718, "2.000": 1.00636, "3.000": 1.00565
+    }
+  },
+  "component_1_smooth_tilt": {
+    "value": "about +1.25..1.50% below k=0.05, easing to +0.57..0.85% above k=0.25",
+    "note": "a broadband offset, not an oscillation; it is the part the +0.74% median describes, and it is roughly the size of the whole 0.5% budget",
+    "mechanism": "unknown"
+  },
+  "component_2_bao_oscillation": {
+    "peaks_at": {"k": 0.100, "ratio": 1.02251},
+    "troughs_at": {"k": 0.080, "ratio": 0.99513, "k_2": 0.130, "ratio_2": 0.99656},
+    "peak_over_trough": "1.02251/0.99513 = 1.0275 (first pair) and 1.02490/0.99656 = 1.0284 (second pair)",
+    "implied_amplitude_excess": "if our wiggle is A(1+delta) against CAMB's A, peak/trough = (1+delta)/(1-delta); 1.0275 gives delta = 1.36%, 1.0284 gives delta = 1.40%",
+    "so": "our BAO wiggle is about 1.4% too strong, and the excess GROWS slightly with k (1.36% -> 1.40% across the two pairs)",
+    "mechanism": "UNKNOWN - the Silk damping explanation originally proposed here was tested and refuted, see below"
+  },
+  "phase_is_not_implicated": "the peak POSITION was separately shown to match to 5 decimals (ln k = -4.0824 on both sides, shift = 0.00000, ratio 1.0088 at the peak top), so this is an amplitude defect and not a phase defect. A phase error would put the residual 90 degrees out of phase with the wiggle; the measured residual is in phase with it.",
+  "RETRACTED_silk_damping_explanation": {
+    "what_was_claimed_here_first": "that an amplitude excess growing with k is the signature of Silk damping being slightly too weak, and that damping would need to be 1-2% stronger",
+    "why_it_was_plausible": "damping suppresses more at higher k, so a weaker damping leaves progressively more wiggle at high k, which is the observed shape",
+    "how_it_was_tested": "scaled kappa by S in PerturbationBatch.coefficients, with tc_epsilon scaled by 1/S so the tight-coupling switch fires at the same time and only the damping changes. Measured P(0.17)/P_CAMB at S = 2.00, 1.20, 1.00, 0.80, 0.50.",
+    "result": {"S=2.00": 1.01623, "S=1.20": 1.02186, "S=1.00": 1.02490, "S=0.80": 1.02987, "S=0.50": 1.10397},
+    "sensitivity": "-1.93% per unit ln kappa around S=1",
+    "why_that_refutes_it": "removing the 2.49% excess would need ln kappa up by 1.29, i.e. opacity multiplied by 3.6. That is not a correction to a recombination history; it would wreck the damping tail, and the high-k ratios sit at only +0.57..0.77%.",
+    "consistency_check_that_validates_the_measurement_itself": "the earlier +-2% kappa experiment reported 0.039pp; ln(1.02)*1.93% = 0.038pp. The measurement was right all along - it was the inference from it that was wrong.",
+    "record": "profiles/tenbol/evidence/silk_refuted.json"
+  },
+  "what_that_leaves": "two measured defects, both about the size of the whole error budget, and NEITHER has a known mechanism. The residual is now a description rather than an explanation.",
+  "hypotheses_from_the_acoustic_sector_that_have_all_failed": [
+    "CAMB's second-order tight-coupling EXIT values - broke k=0.05 outright, dropped",
+    "CAMB's tight-coupling epsilon (0.0325/0.02 against our 0.1) - low k worse, high k diverged to 1.7e210",
+    "baryon lag - agrees with CAMB to 4e-4, not the cause",
+    "baryon sound speed - a 10x change moves dm in the 8th digit",
+    "Silk damping - refuted above, sensitivity two orders of magnitude too small"
+  ],
+  "status_against_target": {"target": 0.005, "max_abs_dev": 0.02490, "median": 0.00742, "verdict": "not met, 5x over at the BAO peak"}
+}

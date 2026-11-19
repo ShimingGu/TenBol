@@ -1,0 +1,34 @@
+{
+  "the_symptom": "the batched device integrator returned dc from -2.7e120 to 4.4e77 at T=16384, and at T=128 only 16 of 128 cosmologies at k=5 h/Mpc failed while k<=2 was 128/128 clean",
+  "two_hypotheses_tested_and_refuted": [
+    {
+      "hypothesis": "dlna_min = 1e-6 was clipping the step",
+      "test": "evaluated every limiter term for cosmology 50 (h=0.800, k_Mpc=4.0) across eleven scale factors, reporting the raw minimum BEFORE the floor",
+      "result": "the smallest raw lim anywhere was 2.265e-05 at a=1e-3, more than twenty times the 1e-6 floor. Nothing was ever clipped.",
+      "verdict": "REFUTED"
+    },
+    {
+      "hypothesis": "the solver itself has an edge at high k_Mpc, so numpy would fail too",
+      "test": "ran the production numpy evolve on the same trajectory",
+      "result": "numpy converges: 74675 steps, dc = 6.301289e+04, comfortably in range",
+      "verdict": "REFUTED - so the device path had a real defect"
+    }
+  ],
+  "the_real_bug": {
+    "where": "torch_solver.rhs_torch, the tight-coupling branch",
+    "what": "the second-order tight-coupling correction was missing entirely",
+    "what_numpy_has": "CAMB hard-codes second_order_tightcoupling = .true. (equations.f90:52) and uses it to correct the quadrupole (equations.f90:2496-2512). numpy computes dop, dgs, sigmadot, qgdot_tc and _r, then rebuilds pig_tc from them before it reaches vb_tc. The port went straight from the first-order pig_tc into vb_tc.",
+    "why_it_matters_physically": "first-order tight coupling does not produce Silk damping; this correction is what damps the acoustic oscillations below the diffusion length",
+    "how_it_was_found": "rhs comparisons at thirteen scale factors for the exact failing trajectory (cosmo 50, k_Mpc=4.0), printing the regime flags alongside the error. The error was 1.4% whenever tc=1 and machine precision whenever tc=0, which pointed straight at a missing term inside the tight-coupling branch rather than at the stepper."
+  },
+  "the_fix_effect": {
+    "a_1e-04_tc_1_before": {"max_abs_dY": 1.792e04, "rel": 1.357e-02, "worst_row": "vb"},
+    "a_1e-04_tc_1_after": {"max_abs_dY": 3.725e-09, "rel": 2.889e-16, "worst_row": "etak"},
+    "all_thirteen_scale_factors_after": "max relative difference 8.227e-15, i.e. floating-point noise",
+    "improvement": "from 1.4% to 1e-16"
+  },
+  "why_every_earlier_check_missed_it": "the first rhs comparison ran at a=0.05, long after tight coupling has ended (tc=0), where the block has no effect. The RSA threshold bug found earlier had exactly the same hiding place, and both were only exposed by comparing across scale factors WITH the regime flags printed.",
+  "this_is_the_sixth_bug_of_its_kind": "every one lives only in the ported device path and is invisible in the default numpy configuration: _taurend_nu truncated by zip(), _tau_end built per-cosmology, tau_rem broadcasting to (T,T), the two missing massive-neutrino masks, the constant RSA threshold, and now the missing second-order tight coupling.",
+  "not_yet_done": "the k=5 T=128 batch has not been rerun since this fix, so it is not yet shown that the 16 cosmologies now pass. The T=16384 run predates all six fixes and remains unusable.",
+  "no_claim": "no accuracy claim and no speedup claim is made here; this records a correctness fix in the device rhs."
+}

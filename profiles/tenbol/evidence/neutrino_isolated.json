@@ -1,0 +1,31 @@
+{
+  "what_this_is": "the decisive isolation of the remaining linear residual: it is entirely in the massive-neutrino sector",
+  "method": "run the same 1-cosmology, 3-k, 3-z comparison twice, once with m_nu = 0.06 eV and once with m_nu = 0, against the matching CAMB reference",
+  "result": {
+    "m_nu_0p06": {"z0": 1.00810, "z3": 1.00263, "z30": 0.99679, "growth_z30_to_z0": 0.01131},
+    "m_nu_0p00": {"z0": 0.99940, "z3": 0.99938, "z30": 0.99935, "growth_z30_to_z0": 0.00005},
+    "grid": "k = 0.13, 0.30, 3.00 h/Mpc; CAMB at 4096 points"
+  },
+  "reading": "with m_nu = 0 the three redshifts all land on 0.9994 and the growth offset collapses from +1.13% to +0.05%. The k-dependent shape is gone as well. So the neutrino sector carries the whole remaining linear error, and the m_nu = 0 residual (-0.06%) is already inside the 0.5% target.",
+  "why_that_is_surprising_and_therefore_informative": "f_nu = Omega_nu/Omega_m = 1.4e-3. The standard suppression is dP/P ~ -8 f_nu ~ -1.1%, so the SIZE is right for a neutrino effect - but we are seeing +1.1% instead of -1.1%, i.e. we are missing (or inverting) the free-streaming suppression entirely, not getting it slightly wrong.",
+  "attempted_diagnosis": {
+    "clxnu_vs_camb_transfer": {
+      "what": "compare our clxnu/clxcdm against ref['transfer']['delta_neutrino']/['delta_cdm'] on the transfer's own grid (ref['transfer_q'], 781 points)",
+      "ours": {"k0.01": 8.438e-02, "k0.03": 5.693e-03, "k0.10": 1.292e-03, "k0.30": 2.606e-04, "k1.00": 3.302e-05},
+      "camb": {"k0.01": -2.345e-04, "k0.03": -2.616e-05, "k0.10": -2.363e-06, "k0.30": -2.630e-07, "k1.00": -2.368e-08},
+      "verdict": "NOT TRUSTWORTHY as evidence. CAMB's delta_neutrino is produced with accurate_massive_neutrino_transfers = False (the default), and the returned values are absurd on their own terms - at k = 0.01 h/Mpc a 0.06 eV neutrino should have delta_nu of the same order as delta_c, not 2e-4 with the opposite sign. The comparison is recorded so it is not repeated, but no conclusion is drawn from it.",
+      "an_earlier_version_of_this_comparison_was_wrong": "a first attempt assumed the transfer was on the 4096-point power grid and log-interpolated: it produced ratios of 29 to -845 that are pure interpolation artefacts. The numbers above use transfer_q."
+    },
+    "removing_the_full_ladder_freeze": {
+      "what": "the nu_free branch zeroes dFnu for the WHOLE ladder once k*tau > max(30, k*taurend_nu) (about z = 2 for k = 6.7e-3/Mpc), which is not what CAMB does - CAMB demotes to lmaxnu_high_ktau and keeps evolving",
+      "result": "DIVERGES: non-finite state at a = 3.944e-02, k = 2.010 /Mpc",
+      "conclusion": "the freeze is load-bearing for stability, not merely a convenience. It cannot simply be deleted; the neutrino ladder needs CAMB's actual high-ktau treatment (demote to l = 4 with a proper closure) before the freeze can go."
+    }
+  },
+  "where_that_leaves_the_linear_spectrum": {
+    "max_abs_dev": 0.0103,
+    "target": 0.005,
+    "residual_owner": "the massive-neutrino ladder",
+    "next_step": "implement CAMB's high_ktau neutrino closure (lmaxnu_tau = 4 with the correct sink term) instead of the whole-ladder freeze, then re-measure; the m_nu = 0 control says everything else is already inside target"
+  }
+}

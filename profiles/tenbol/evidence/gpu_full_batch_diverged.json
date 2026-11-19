@@ -1,0 +1,37 @@
+{
+  "run": "128 wavenumbers x 128 cosmologies = T=16384, evolve_torch_adaptive, batch-uniform min step",
+  "measured": {
+    "seconds": 5142.8,
+    "minutes": 85.7,
+    "n_steps": 104426,
+    "ms_per_step": 49.25,
+    "finite": "16384 / 16384",
+    "dc_min": -2.7063e120,
+    "dc_max": 4.4080e77
+  },
+  "verdict": "STILL NOT USABLE, but for a different reason than before.",
+  "progress": "The earlier T=16384 attempt returned NaN on every trajectory. This one completes, returns finite values everywhere, and does so with the same step schedule as the numpy solver. So the recording bug and the RSA threshold bug are genuinely fixed: the batch machinery now runs end to end.",
+  "the_remaining_problem": "the values are diverged. dc should be of order 1e4 (a single k=0.3 trajectory gives 2.861853271424e+04 against numpy), but the batch spans -2.7063e120 to 4.4080e77. Finite is not converged - which is exactly the distinction that the k=5 fixed-step run forced earlier, where dlna=1.65e-4 gave a finite dc of 2.2e79.",
+  "step_count_reality_check": "the T=2 experiment gave 55231 steps and I extrapolated from it. The real T=16384 batch needed 104426 - nearly double. More trajectories means more distinct event times, so min(dln_target) stays small for longer. The 56-minute projection was wrong; the true cost was 85.7 minutes.",
+  "what_is_not_yet_known": [
+    "which trajectories diverge - k, cosmology, or both",
+    "at what scale factor they diverge",
+    "whether the cause is the batch-uniform step being too coarse somewhere (a regime where min(lim) is not binding but the trajectory still needs a smaller step), or a defect in the device rhs that only some parameter combinations hit",
+    "whether any of the 16384 results are correct at all, so no accuracy claim of any kind can be made from this run"
+  ],
+  "why_this_matters_for_the_project": "even if the divergence is fixed, this run cost 85.7 minutes on one MIG slice for 128x128. The CPU path is estimated at ~4.3 hours single-core for the same work, so the device would be roughly 3x - not the 4.6x projected from T=2, and not enough to change what the GPU line can deliver.",
+  "honest_status_of_the_gpu_line": {
+    "verified": [
+      "rhs_torch matches numpy on a single state (0/229 rows at a=0.05)",
+      "the RSA threshold fix brings a full 8330-step k=0.3 integration to 3.7e-6 and a 12361-step k=0.9 integration to 1.8e-6",
+      "batch-uniform stepping reproduces the adaptive answer bit-for-bit at T=1",
+      "the device rhs is 3.76x faster than numpy at T=16384 as an isolated operator"
+    ],
+    "not_verified": [
+      "any batched integration producing correct values",
+      "any end-to-end GPU speedup",
+      "that the GPU path can beat the CPU path on this workload at all"
+    ]
+  },
+  "no_claim": "no accuracy claim, no speedup claim, and no claim that the GPU path is close to working."
+}
