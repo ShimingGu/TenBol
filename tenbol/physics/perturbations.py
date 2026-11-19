@@ -69,8 +69,8 @@ class PerturbationSettings:
     tc_epsilon: float = 0.1
     rsa_ktau: float = 30.0
     rsa_ktau_nu: float = 30.0
-    # Moment at which the frozen massless-neutrino closure starts damping; see
-    # the nu_free block in ``rhs``.
+    # First frozen massive-neutrino moment. Freezing the whole hierarchy (0)
+    # replaces its metric sources with the steady free-streaming response.
     nu_freeze_from_l: int = 0
     rsa_ktau_r: float = 30.0
     # CAMB applies the late radiation truncation only for k > 0.03 /Mpc
@@ -130,6 +130,7 @@ class PerturbationBatch:
         # logarithmic derivative (CAMB: dopacity/opacity).
         self._dkap_tab = np.gradient(self._kap_tab, self._ln_a, axis=1)
         self._tau_grid = bg.tau(np.exp(self._ln_a))                    # (B, N)
+        self._ln_a_tc_end = self._tight_coupling_end()
         # Conformal time at a = 1.  CAMB's radiation damping uses the *remaining*
         # conformal time (tau0 - tau), which is what makes 1/tau huge today.
         # Per-TRAJECTORY, not per-cosmology: _tau_grid has one row per
@@ -175,6 +176,37 @@ class PerturbationBatch:
         self._rho_spl, self._p_spl = bg._nu_tables()
 
     # ------------------------------------------------------------------
+    def _tight_coupling_end(self):
+        """First exit through the wavelength or expansion-time criterion."""
+        threshold = self.k / self.s.tc_epsilon
+        result = np.full(self.T, np.inf)
+        for sample in np.unique(self.sample):
+            rows = np.flatnonzero(self.sample == sample)
+            opacity = self._kap_tab[sample]
+
+            # Tight coupling also requires the scattering time to be small
+            # relative to conformal time. CAMB 2.0.5 uses 1/(kappa*tau) = .005.
+            optical_scale = opacity * self._tau_grid[sample]
+            crossings = np.flatnonzero((optical_scale[:-1] > 200.0)
+                                       & (optical_scale[1:] <= 200.0))
+            if crossings.size:
+                j = crossings[0]
+                frac = (optical_scale[j] - 200.0) / (optical_scale[j] - optical_scale[j + 1])
+                result[rows] = self._ln_a[j] + frac * (self._ln_a[j + 1] - self._ln_a[j])
+
+            # Search the running minimum to get the first exit even if
+            # reionization later increases the opacity.
+            right = np.searchsorted(-np.minimum.accumulate(opacity), -threshold[rows])
+            result[rows[right == 0]] = -np.inf
+            hit = (right > 0) & (right < opacity.size)
+            left = right[hit] - 1
+            crossing_rows = rows[hit]
+            frac = ((opacity[left] - threshold[crossing_rows])
+                    / (opacity[left] - opacity[left + 1]))
+            switch = self._ln_a[left] + frac * (self._ln_a[left + 1] - self._ln_a[left])
+            result[crossing_rows] = np.minimum(result[crossing_rows], switch)
+        return result
+
     def _interp(self, table, ln_a):
         tab = self._ln_a
         i = np.clip(np.searchsorted(tab, ln_a) - 1, 0, len(tab) - 2)
@@ -225,6 +257,7 @@ class PerturbationBatch:
             "tau_rem": np.maximum(self._tau_end - tau, 0.0),
             "taurend": self._taurend,
             "taurend_nu": self._taurend_nu,
+            "tight_coupling": ln_a < self._ln_a_tc_end,
             "kappa": kappa, "dopacity": dopacity, "cs2": cs2, "grho_c": grho_c, "grho_b": grho_b,
             "grho_g": grho_g, "grho_r": grho_r, "grho_nu_mass": grho_nu_mass,
             "grho_nu_species": grho_nu_species, "grho_nu_rel_species": grho_nu_rel,
@@ -314,6 +347,23 @@ def _l_coeff(k, l):
     return k * l / (2.0 * l + 1.0), k * (l + 1.0) / (2.0 * l + 1.0)
 
 
+def _neutrino_response(k, density_cb, velocity, density_rel, weights):
+    """Per-species response once the full massive hierarchy is frozen.
+
+    Balance the gravitational rate against free streaming at each momentum.
+    Differentiating that balance and using the continuity equation gives the
+    heat flux in the CDM rest frame.
+    """
+    gravity = 0.5 * density_cb
+    v2 = velocity ** 2
+    clustered = gravity / (gravity + k ** 2 * v2)
+    derivative = clustered * (1.0 - clustered) * (1.0 - 2.0 * v2)
+    enthalpy = (4.0 / 3.0) * weights[None, :, None] * density_rel[:, None, :] / velocity
+    return ((enthalpy * clustered).sum(axis=1),
+            (enthalpy * derivative).sum(axis=1),
+            (enthalpy * (1.0 - clustered)).sum(axis=1))
+
+
 def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     """Right-hand side on the dense state tensor.
 
@@ -362,15 +412,12 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     Fnu = Y[L.offsets["Fnu"]].reshape(n_s, n_q, L.lmax_nu + 1, T)
 
     # ---- massive-neutrino projections ---------------------------------
-    epsT = np.transpose(1.0 / c["vnu"], (1, 2, 0))        # (S, nq, T)
+    vT = np.transpose(c["vnu"], (1, 2, 0))                # (S, nq, T)
     wq = NU_PERT_W[None, :, None]
-    dgrho_nu = np.sum(grho_rel * np.sum(wq * epsT * Fnu[..., 0, :], axis=1), axis=0)
+    dgrho_nu = np.sum(grho_rel * np.sum(wq * Fnu[..., 0, :] / vT, axis=1), axis=0)
     dgq_nu = np.sum(grho_rel * np.sum(wq * Fnu[..., 1, :], axis=1), axis=0)
 
-    dgrho_matter = grho_b * db + grho_c * dc + dgrho_nu
-    dgq_matter = grho_b * vb + dgq_nu
-
-    tcu = kappa > (k / s.tc_epsilon)
+    tcu = c["tight_coupling"]
     ktau = k * tau
     # CAMB (equations.f90:313-323) switches the radiation hierarchies to the
     # algebraic streaming form once tau > max(15/k, taurend), i.e. when
@@ -381,6 +428,20 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     _ktau_nu = np.maximum(s.rsa_ktau_nu, k * c["taurend_nu"])
     rsa_g = (ktau > _ktau_g) & (k > s.rsa_kmin)
     rsa_r = (ktau > _ktau_nu) & (k > s.rsa_kmin_r)
+    nu_free = rsa_r
+    streaming = np.zeros_like(k)
+    if s.nu_freeze_from_l <= 0 and np.any(nu_free):
+        cb = grho_c[nu_free] + grho_b[nu_free]
+        delta_cb = (grho_c[nu_free] * dc[nu_free] + grho_b[nu_free] * db[nu_free]) / cb
+        clustered, derivative, free_streaming = _neutrino_response(
+            k[nu_free], cb, vT[..., nu_free], grho_rel[:, nu_free], NU_PERT_W)
+        dgrho_nu[nu_free] = clustered.sum(axis=0) * delta_cb
+        dgq_nu[nu_free] = (clustered.sum(axis=0) * grho_b[nu_free] / cb * vb[nu_free]
+                           - derivative.sum(axis=0) * h[nu_free] * delta_cb / k[nu_free])
+        streaming[nu_free] = free_streaming.sum(axis=0)
+
+    dgrho_matter = grho_b * db + grho_c * dc + dgrho_nu
+    dgq_matter = grho_b * vb + dgq_nu
 
     # ---- radiation streaming approximation ----------------------------
     zm = (0.5 * dgrho_matter / k + etak) / h
@@ -398,7 +459,6 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     qr_e = np.where(rsa_r, qr_rsa, qr)
 
     dgrho = dgrho_matter + grho_g * dg_e + grho_r * dr_e
-    dgq = dgq_matter + grho_g * qg_e + grho_r * qr_e
 
     # CAMB: cothxor = 1/tau with tau the conformal time FROM THE BIG BANG
     # (equations.f90:2368).  That damps the highest multipole hard at early
@@ -407,6 +467,7 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
     # hierarchy is being built and over-damps at late times.
     inv_tau = 1.0 / np.maximum(c["tau"], 1.0e-30)
     z = (0.5 * dgrho / k + etak) / h
+    dgq = dgq_matter + grho_g * qg_e + grho_r * qr_e - streaming * z
     sigma = z + 1.5 * dgq / k2
 
     dY = np.zeros_like(Y)
@@ -532,7 +593,6 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
         kk * Y[L.fr(L.lmax_r - 1)] - (L.lmax_r + 1) * Y[L.fr(L.lmax_r)] * inv_tau)
 
     # ---- massive neutrinos (block layout (S, nq, L+1, T)) --------------
-    vT = np.transpose(c["vnu"], (1, 2, 0))                # (S, nq, T)
     # Flatten to (T,) first: with a batch an upstream term can leave a trailing
     # singleton axis, and k[None, None, :] would then broadcast to (T, 1, 1)
     # instead of (1, 1, T).
@@ -572,26 +632,9 @@ def rhs(Y, a, batch: "PerturbationBatch", c=None, capture=None):
             dFnu[..., l_hi, :])
         for ll in range(l_hi + 1, L.lmax_nu + 1):
             dFnu[..., ll, :] = np.where(m, 0.0, dFnu[..., ll, :])
-    # Freeze the massive-neutrino hierarchy while k*(tau0 - tau) is large
-    # (early times), mirroring CAMB's high_ktau switch.  Without this the
-    # block has no sink and its cascade runs away.
-    # CAMB: tau_switch_no_nu_multpoles = max(15/k * switchBoost,
-    #                                        min(taurend, matter_verydom_tau))
-    # i.e. k*tau > max(15, k*taurend), on the ACCUMULATED conformal time.
-    # Using k*tau_rem froze the hierarchy from the very first step (tau_rem is
-    # ~14000 early on, so every k in the workload exceeded the threshold),
-    # which is what left clxnu = qnu = 0.
-    _ktau_nu_mass = np.maximum(s.rsa_ktau_nu, k * c["taurend_nu"])
-    nu_free = (ktau > _ktau_nu_mass) & (k > s.rsa_kmin_r)
     if np.any(nu_free):
-        # Freeze the closure from ``nu_freeze_from_l`` upwards.  Freezing the
-        # WHOLE ladder (the default, l = 0) also freezes delta_nu itself, which
-        # leaves it parked at the value it had when the switch fired and lets it
-        # decay no further - too much gravitational source.  Dropping the freeze
-        # entirely overshoots the other way (measured: k=0.13 growth offset
-        # +1.08% frozen vs -0.27% free, against a truth in between), so the
-        # right statement is that the low moments must keep evolving and only
-        # the runaway cascade is what needs the sink.
+        # With the full hierarchy inactive its sources come from the
+        # algebraic response. Positive values retain explicit low moments.
         l_fr = max(int(s.nu_freeze_from_l), 0)
         m = nu_free[None, None, None, :]
         dFnu[..., l_fr:, :] = np.where(m, 0.0, dFnu[..., l_fr:, :])
@@ -609,20 +652,19 @@ _ERROR_KEYS = ("dc", "db", "dg", "qg", "vb", "dr", "qr", "etak")
 def _event_times(batch: "PerturbationBatch", a0, a1):
     """Per-trajectory scale factors of the regime switches.
 
-    Tight coupling ends when ``kappa = k/epsilon``; radiation streaming starts
-    when ``k*tau`` reaches its threshold.  Crossings are located on the
-    tabulated background grid and linearly interpolated in ``ln a``.  Each
+    Tight coupling ends at the first opacity or expansion-time crossing.
+    Radiation streaming starts when ``k*tau`` reaches its threshold. Crossings
+    are located on the tabulated grid and interpolated in ``ln a``. Each
     trajectory clamps its own step to land exactly on its switch, so no RK
     stage straddles a discontinuity (see Tenbol_decisions.md D8).
     """
     s = batch.s
     ln_a = batch._ln_a
-    kap = batch._kap_tab[batch.sample]
     tau = batch._tau_grid[batch.sample]
     k = batch.k[:, None]
-    out = {}
+    tc = np.where(batch._ln_a_tc_end > np.log(a0), np.exp(batch._ln_a_tc_end), np.inf)
+    out = {"tc": np.column_stack((tc, np.full(batch.T, np.inf)))}
     for name, ref, extra in (
-        ("tc", kap, k / s.tc_epsilon),
         ("rsa_g", k * tau,
          np.where(k > s.rsa_kmin, np.maximum(s.rsa_ktau, k * batch._taurend[:, None]), np.inf)),
         ("rsa_r", k * tau,
@@ -652,7 +694,7 @@ def _take(c, idx, n_total):
     return out
 
 
-def _record_rows(rec, Y, c, rec_rows, idx, layout: StateLayout):
+def _record_rows(rec, Y, c, rec_rows, idx, layout: StateLayout, settings: PerturbationSettings):
     """Record a (possibly interpolated) state slice into the output arrays.
 
     ``Y`` has shape ``(D, n)`` and ``c`` is already sliced to those ``n``
@@ -664,15 +706,23 @@ def _record_rows(rec, Y, c, rec_rows, idx, layout: StateLayout):
     grho = c["grho_nu_species"]                          # (n, S)
     n_s, n_q, n_l = layout.n_species, layout.n_q, layout.lmax_nu + 1
     Fnu = Y[layout.offsets["Fnu"]].reshape(n_s, n_q, n_l, Y.shape[1])
-    epsT = np.transpose(1.0 / c["vnu"], (1, 2, 0))
+    velocity = np.transpose(c["vnu"], (1, 2, 0))
     wq = NU_PERT_W[None, :, None]
-    density = c["grho_nu_rel_species"].T * np.sum(wq * epsT * Fnu[..., 0, :], axis=1)
+    density_rel = c["grho_nu_rel_species"].T
+    density = density_rel * np.sum(wq * Fnu[..., 0, :] / velocity, axis=1)
+    cold_contrast = grho_c * Y[layout.scalar("dc")] + grho_b * Y[layout.scalar("db")]
+    k = c["k"]
+    late = ((k > settings.rsa_kmin_r)
+            & (k * c["tau"] >= np.maximum(settings.rsa_ktau_nu, k * c["taurend_nu"])))
+    if settings.nu_freeze_from_l <= 0 and np.any(late):
+        cb = grho_c[late] + grho_b[late]
+        clustered, _, _ = _neutrino_response(
+            k[late], cb, velocity[..., late], density_rel[:, late], NU_PERT_W)
+        density[:, late] = clustered * cold_contrast[late] / cb
     clxnu = np.divide(density, grho.T, out=np.zeros_like(density), where=grho.T > 0.0)
     rec["clxnu"][rec_rows, idx] = clxnu.mean(axis=0) if n_s else 0.0
     dgrho_nu = np.sum(density, axis=0)
-    rec["dm"][rec_rows, idx] = (grho_c * Y[layout.scalar("dc")]
-                                + grho_b * Y[layout.scalar("db")]
-                                + dgrho_nu) / (grho_c + grho_b + np.sum(grho, axis=1))
+    rec["dm"][rec_rows, idx] = (cold_contrast + dgrho_nu) / (grho_c + grho_b + np.sum(grho, axis=1))
 
 
 def _hermite(Y0, Y1, f0, f1, delta, theta):
@@ -711,8 +761,9 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
            ("dc", "db", "dg", "dr", "vb", "qg", "qr", "etak", "dm", "clxnu")}
 
     events = _event_times(batch, s.a_start, a_end)
-    targets = np.sort(np.vstack([np.where(np.isfinite(events[n][:, 0]), events[n][:, 0], np.inf)
-                                 for n in ("tc", "rsa_g", "rsa_r")]), axis=0).T   # (T, 3)
+    times = np.column_stack([events[name][:, 0] for name in ("tc", "rsa_g", "rsa_r")])
+    event_order = np.argsort(times, axis=1, kind="stable")
+    targets = np.take_along_axis(times, event_order, axis=1)
     next_ev = np.zeros(T, dtype=np.int64)
     pending = targets[:, 0].copy()
     next_out = np.zeros(T, dtype=np.int64)
@@ -729,7 +780,7 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
         # the solution does not depend on which redshifts the caller asks for.
         target = np.minimum(np.full(T, a_end), np.where(pending > a, pending, a_end))
         dln_target = np.where(target > a, np.log(np.maximum(target, 1e-300) / a), 0.0)
-        tcu = c["kappa"] > (batch.k / s.tc_epsilon)
+        tcu = c["tight_coupling"]
         dtau = 1.0 / c["h"]
         ktau = batch.k * c["tau"]
         ktau_g = np.maximum(s.rsa_ktau, batch.k * c["taurend"])
@@ -830,11 +881,11 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
                           f"zmet={zmet2: .4e} sigma={sigma: .4e} vnewt={vnewt: .4e}", flush=True)
                     batch._probe_list.remove(tgt)
 
-        # regime switches: install the CAMB tight-coupling exit values
-        for j, name in enumerate(("tc", "rsa_g", "rsa_r")):
-            # only trajectories whose *current* pending event is this switch
-            hit = (~done) & (next_ev == j) & (a >= pending)
-            if name == "tc" and np.any(hit):
+        advanced = (~done) & (a >= pending)
+        if np.any(advanced):
+            rows = np.flatnonzero(advanced)
+            tc_rows = rows[event_order[rows, next_ev[rows]] == 0]
+            if tc_rows.size:
                 # CAMB's GaugeInterface_ScalEv installs the tight-coupling
                 # values when it leaves tight coupling (equations.f90:355-367):
                 #     y(g_ix + 2) = EV%pig            ! the quadrupole itself
@@ -849,12 +900,10 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
                 # from the current state instead.
                 cap = {}
                 rhs(Y, a, batch, c, capture=cap)
-                pig_tc = np.asarray(cap["pig_tc"])[hit]
-                Y[L.scalar("pig"), hit] = pig_tc
-                Y[L.g(2), hit] = pig_tc / 4.0
-                Y[L.g(3), hit] = Y[L.fg(3)][hit] / 4.0
-        advanced = (~done) & (a >= pending)
-        if np.any(advanced):
+                pig_tc = np.asarray(cap["pig_tc"])[tc_rows]
+                Y[L.scalar("pig"), tc_rows] = pig_tc
+                Y[L.g(2), tc_rows] = pig_tc / 4.0
+                Y[L.g(3), tc_rows] = Y[L.fg(3), tc_rows] / 4.0
             next_ev = np.where(advanced, next_ev + 1, next_ev)
             pending = np.where(advanced,
                                np.where(next_ev < 3, targets[np.arange(T), np.minimum(next_ev, 2)],
@@ -871,11 +920,13 @@ def evolve(batch: "PerturbationBatch", z_out, a_end: float = 1.0,
             theta = np.clip((np.log(a_tgt) - np.log(a_prev[rows])) / h[rows], 0.0, 1.0)
             Ymid = _hermite(Y_prev[:, rows], Y[:, rows], k1[:, rows], k4[:, rows],
                             h[rows], theta)
-            cm = _take(c, rows, T)
+            a_record = a.copy()
+            a_record[rows] = a_tgt
+            cm = _take(batch.coefficients(a_record), rows, T)
             for j in np.unique(idx):
                 sel_j = np.nonzero(idx == j)[0]
                 _record_rows(rec, Ymid[:, sel_j], _take(cm, sel_j, len(rows)),
-                             rows[sel_j], int(j), L)
+                             rows[sel_j], int(j), L, s)
             next_out[rows] += 1
         done = a >= a_end - 1e-14
     for key in rec:

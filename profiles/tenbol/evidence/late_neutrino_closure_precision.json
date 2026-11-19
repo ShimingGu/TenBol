@@ -1,0 +1,254 @@
+{
+  "baseline_commit": "95d51b3",
+  "prior_measurements": "neutrino_projection_precision.json",
+  "reference": "CAMB 2.0.5 with ReferenceSettings defaults and HMcode 2020, sampled by cubic interpolation in log k and log power.",
+  "device": "NVIDIA H100 NVL MIG 1g.12gb",
+  "change": "End photon tight coupling at the first wavelength or expansion-time crossing. Use a momentum-resolved steady response for massive-neutrino density and flux after the hierarchy is frozen.",
+  "scope": "Nonlinear total matter power with a warm CUDA context and a fresh background and thermal history for each timed call. Baseline uses the host launcher and device kernel from 95d51b3 with the same background, thermal history, and nonlinear implementation as the candidate.",
+  "integration_k_h_mpc": {
+    "min": 0.0001,
+    "max": 20.0,
+    "count": 128
+  },
+  "output_k_h_mpc": {
+    "min": 0.0001,
+    "max": 10.0,
+    "count": 256
+  },
+  "output_redshifts": [
+    0.0,
+    0.5,
+    1.0,
+    2.0
+  ],
+  "seeded_benchmark": {
+    "seed": 20261106,
+    "cosmologies": 8,
+    "order": [
+      "after",
+      "before",
+      "before",
+      "after"
+    ],
+    "runs": {
+      "before": [
+        {
+          "wall_seconds": 36.15737740899931,
+          "phases": {
+            "background": 8.07768027500424,
+            "cuda_solver": 27.901293545000954
+          },
+          "max_rel": 0.02277516103465671,
+          "per_cosmology_max": [
+            0.020600479699141916,
+            0.01952445450624385,
+            0.0189989650261293,
+            0.018007380726241085,
+            0.02029797401726774,
+            0.019519709551842457,
+            0.02277516103465671,
+            0.01864582321469066
+          ],
+          "worst": {
+            "cosmology": 6,
+            "k": 1.311133937421563,
+            "z": 0.0,
+            "signed_error": 0.02277516103465671
+          }
+        },
+        {
+          "wall_seconds": 32.6575115989981,
+          "phases": {
+            "background": 8.090783149003983,
+            "cuda_solver": 24.390566338995995
+          },
+          "max_rel": 0.02277516103465671,
+          "per_cosmology_max": [
+            0.020600479699141916,
+            0.01952445450624385,
+            0.0189989650261293,
+            0.018007380726241085,
+            0.02029797401726774,
+            0.019519709551842457,
+            0.02277516103465671,
+            0.01864582321469066
+          ],
+          "worst": {
+            "cosmology": 6,
+            "k": 1.311133937421563,
+            "z": 0.0,
+            "signed_error": 0.02277516103465671
+          }
+        }
+      ],
+      "after": [
+        {
+          "wall_seconds": 32.42389278599876,
+          "phases": {
+            "background": 8.580148848006502,
+            "cuda_solver": 23.66525119799917
+          },
+          "max_rel": 0.006220559073713439,
+          "per_cosmology_max": [
+            0.0051331329984369845,
+            0.0039425223129121445,
+            0.0044435326464002944,
+            0.005122134934218092,
+            0.00602852903356399,
+            0.006220559073713439,
+            0.005758764957255247,
+            0.0025805268760943356
+          ],
+          "worst": {
+            "cosmology": 5,
+            "k": 0.020593278373701597,
+            "z": 0.0,
+            "signed_error": 0.006220559073713439
+          }
+        },
+        {
+          "wall_seconds": 36.219366876001004,
+          "phases": {
+            "background": 8.101252154003305,
+            "cuda_solver": 27.940851516003022
+          },
+          "max_rel": 0.006220559073713439,
+          "per_cosmology_max": [
+            0.0051331329984369845,
+            0.0039425223129121445,
+            0.0044435326464002944,
+            0.005122134934218092,
+            0.00602852903356399,
+            0.006220559073713439,
+            0.005758764957255247,
+            0.0025805268760943356
+          ],
+          "worst": {
+            "cosmology": 5,
+            "k": 0.020593278373701597,
+            "z": 0.0,
+            "signed_error": 0.006220559073713439
+          }
+        }
+      ]
+    },
+    "median_wall_seconds": {
+      "before": 34.407444503998704,
+      "after": 34.32162983099988
+    }
+  },
+  "parameter_corners": {
+    "parameters": [
+      {
+        "h": 0.6,
+        "omega_b": 0.02,
+        "omega_c": 0.1,
+        "A_s": 1.5e-09,
+        "n_s": 0.92,
+        "m_nu_sum": 0.3,
+        "N_eff": 3.046,
+        "T_cmb": 2.7255,
+        "num_massive": 1,
+        "pivot_k": 0.05
+      },
+      {
+        "h": 0.8,
+        "omega_b": 0.0245,
+        "omega_c": 0.16,
+        "A_s": 2.7e-09,
+        "n_s": 1.02,
+        "m_nu_sum": 0.3,
+        "N_eff": 3.046,
+        "T_cmb": 2.7255,
+        "num_massive": 1,
+        "pivot_k": 0.05
+      },
+      {
+        "h": 0.6,
+        "omega_b": 0.0245,
+        "omega_c": 0.16,
+        "A_s": 2.1e-09,
+        "n_s": 0.965,
+        "m_nu_sum": 0.06,
+        "N_eff": 3.046,
+        "T_cmb": 2.7255,
+        "num_massive": 1,
+        "pivot_k": 0.05
+      },
+      {
+        "h": 0.8,
+        "omega_b": 0.02,
+        "omega_c": 0.1,
+        "A_s": 2.1e-09,
+        "n_s": 0.965,
+        "m_nu_sum": 0.06,
+        "N_eff": 3.046,
+        "T_cmb": 2.7255,
+        "num_massive": 1,
+        "pivot_k": 0.05
+      }
+    ],
+    "order": [
+      "before",
+      "after"
+    ],
+    "runs": {
+      "before": [
+        {
+          "wall_seconds": 26.811130102003517,
+          "phases": {
+            "background": 4.164835802002926,
+            "cuda_solver": 22.555022838001605
+          },
+          "max_rel": 0.028273784025826698,
+          "per_cosmology_max": [
+            0.028273784025826698,
+            0.016321017659154613,
+            0.013325258924862915,
+            0.019599554813357623
+          ],
+          "worst": {
+            "cosmology": 0,
+            "k": 0.0001,
+            "z": 0.0,
+            "signed_error": -0.028273784025826698
+          }
+        }
+      ],
+      "after": [
+        {
+          "wall_seconds": 22.49989148599707,
+          "phases": {
+            "background": 3.8233406960061984,
+            "cuda_solver": 18.585642067999288
+          },
+          "max_rel": 0.011447161518344129,
+          "per_cosmology_max": [
+            0.011447161518344129,
+            0.005761107130599852,
+            0.002279814097354116,
+            0.004037686231364912
+          ],
+          "worst": {
+            "cosmology": 0,
+            "k": 3.874675120456128,
+            "z": 2.0,
+            "signed_error": -0.011447161518344129
+          }
+        }
+      ]
+    }
+  },
+  "tight_coupling_probe": {
+    "description": "Add only the expansion-time threshold to a one-way wavelength switch. The four probes were seeded cosmologies 0, 5, and 6 and parameter corner 0.",
+    "k_h_mpc": 0.0001,
+    "redshift": 0.0,
+    "max_relative_error_without_expansion_threshold": 0.028273784086260467,
+    "max_relative_error_with_expansion_threshold": 1.9484340664899236e-05
+  },
+  "residual_probe": {
+    "description": "At the worst parameter corner, substituting CAMB linear power into the same TenBol HMcode implementation reduces the maximum nonlinear relative error.",
+    "with_tenbol_linear_power": 0.011447161518344129,
+    "with_camb_linear_power": 0.007550917947850233
+  }
+}

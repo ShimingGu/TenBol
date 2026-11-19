@@ -13,6 +13,7 @@ import pytest
 
 from tenbol.constants import C_LIGHT, MPC_M, SIGMA_THOMSON
 from tenbol.physics.background import Background, CosmologyBatch
+from tenbol.physics.perturbations import PerturbationBatch, PerturbationSettings
 from tenbol.physics.thermal import Reionization, ThermalHistory
 
 camb = pytest.importorskip("camb")
@@ -75,3 +76,16 @@ def test_temperature_and_reionization_sane():
     assert th.z_re[0] > 0.0  # reionization is matched to the requested tau
     # T_m at recombination should be close to the radiation temperature
     assert 2000.0 < tm[3] < 3200.0
+
+
+def test_tight_coupling_exits_on_the_expansion_or_wavelength_limit():
+    bg, th = make()
+    k = np.array([1e-4, 1.0])
+    settings = PerturbationSettings()
+    batch = PerturbationBatch(bg, th, k, [0, 0], settings)
+    a_exit = np.exp(batch._ln_a_tc_end)
+    at_exit = batch.coefficients(a_exit)
+    assert at_exit["kappa"][0] * at_exit["tau"][0] == pytest.approx(200.0, rel=2e-4)
+    assert at_exit["kappa"][1] == pytest.approx(k[1] / settings.tc_epsilon, rel=1e-4)
+    assert batch.coefficients(a_exit * 0.999)["tight_coupling"].all()
+    assert not batch.coefficients([1.0, 1.0])["tight_coupling"].any()

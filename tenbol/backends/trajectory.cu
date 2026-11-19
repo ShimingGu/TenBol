@@ -29,14 +29,6 @@ struct Grid {
         }
         return crossing(lo, TAU, target);
     }
-    __device__ double next_opacity_crossing(double target, int& i) const {
-        for (; i < count - 1; ++i) {
-            if ((row(i)[KAPPA] > target) != (row(i + 1)[KAPPA] > target)) {
-                return crossing(i++, KAPPA, target);
-            }
-        }
-        return NO_EVENT;
-    }
 };
 
 struct Coefficients {
@@ -90,6 +82,28 @@ __device__ double energy(double mass, double q) {
     return sqrt(1.0 + u * u);
 }
 
+struct NeutrinoResponse { double clustered, derivative, streaming; };
+
+__device__ __noinline__ NeutrinoResponse neutrino_response(
+    const Coefficients& c, double k, const double* momenta, const double* weights
+) {
+    const double gravity = 0.5 * (c.cold + c.baryon);
+    NeutrinoResponse response{0.0, 0.0, 0.0};
+    for (int s = 0; s < NS; ++s) {
+        const double density = (4.0 / 3.0) * c.nu_rel[s];
+        for (int q = 0; q < NQ; ++q) {
+            const double eps = energy(c.mass[s], momenta[q]);
+            const double v2 = 1.0 / (eps * eps);
+            const double r = gravity / (gravity + k * k * v2);
+            const double enthalpy = density * weights[q] * eps;
+            response.clustered += enthalpy * r;
+            response.derivative += enthalpy * r * (1.0 - r) * (1.0 - 2.0 * v2);
+            response.streaming += enthalpy * (1.0 - r);
+        }
+    }
+    return response;
+}
+
 // The device implementation shares the CPU solver's state layout and physics
 // settings. The regime masks are constant over a step, with one-sided values
 // at a switch. Return the tight-coupling quadrupole for the exit state.
@@ -97,17 +111,27 @@ __device__ double rhs(
     const double* y, double* f, const Coefficients& c, double k, Regime regime,
     const double* momenta, const double* weights, int short_l, int freeze_l
 ) {
-    double density_nu = 0.0, flux_nu = 0.0;
-    for (int s = 0; s < NS; ++s) {
-        double density = 0.0, flux = 0.0;
-        for (int q = 0; q < NQ; ++q) {
-            const double w = weights[q], we = w * energy(c.mass[s], momenta[q]);
-            const int i = nu(s, q);
-            density += we * y[i];
-            flux += w * y[i + 1];
+    double density_nu = 0.0, flux_nu = 0.0, streaming_nu = 0.0;
+    if (regime.freeze_nu && freeze_l == 0) {
+        const NeutrinoResponse response = neutrino_response(c, k, momenta, weights);
+        const double cb = c.cold + c.baryon;
+        const double delta_cb = (c.baryon * y[DB] + c.cold * y[DC]) / cb;
+        density_nu = response.clustered * delta_cb;
+        flux_nu = response.clustered * c.baryon / cb * y[VB]
+            - response.derivative * c.h * delta_cb / k;
+        streaming_nu = response.streaming;
+    } else {
+        for (int s = 0; s < NS; ++s) {
+            double density = 0.0, flux = 0.0;
+            for (int q = 0; q < NQ; ++q) {
+                const double w = weights[q], we = w * energy(c.mass[s], momenta[q]);
+                const int i = nu(s, q);
+                density += we * y[i];
+                flux += w * y[i + 1];
+            }
+            density_nu += c.nu_rel[s] * density;
+            flux_nu += c.nu_rel[s] * flux;
         }
-        density_nu += c.nu_rel[s] * density;
-        flux_nu += c.nu_rel[s] * flux;
     }
     const double dm = c.baryon * y[DB] + c.cold * y[DC] + density_nu;
     const double qm = c.baryon * y[VB] + flux_nu;
@@ -119,8 +143,10 @@ __device__ double rhs(
     const double dr = regime.rsa_r ? -4.0 / k * dzm : y[DR];
     const double qr = regime.rsa_r ? -4.0 / 3.0 * zm : y[QR];
     const double dgrho = dm + c.photon * dg + c.radiation * dr;
-    const double dgq = qm + c.photon * qg + c.radiation * qr;
     const double z = (0.5 * dgrho / k + y[ETAK]) * inv_h;
+    // The continuity equation supplies the streaming heat flux in the CDM
+    // rest frame even where the density response is small.
+    const double dgq = qm + c.photon * qg + c.radiation * qr - streaming_nu * z;
     const double sigma = z + 1.5 * dgq / (k * k);
     const double metric = (8.0 / 15.0) * k * sigma;
     const double dbdot = -k * (z + y[VB]);
@@ -230,7 +256,7 @@ extern "C" __global__ void integrate(
     const double* tables, const double* switches, const double* momenta, const double* weights,
     const double* output_x, double* result, int* steps, double* last_x,
     int n, int nout, int grid_count, double x_origin, double grid_spacing, double x_start,
-    int max_steps, int short_l, int freeze_l, double tc_epsilon, double rsa_ktau,
+    int max_steps, int short_l, int freeze_l, double rsa_ktau,
     double rsa_ktau_r, double rsa_ktau_nu, double kmin_g, double kmin_r,
     double dx_min, double dx_max, double acoustic, double nu_cfl, double horizon, double stiff
 ) {
@@ -239,7 +265,7 @@ extern "C" __global__ void integrate(
     const int b = sample[trajectory];
     const double* bg = background + b * (MASS + 2 * NS);
     Grid grid{tables + b * grid_count * (NU_DENSITY + NS), x_origin, grid_spacing, grid_count};
-    const double k = wave[trajectory], tc_threshold = k / tc_epsilon;
+    const double k = wave[trajectory];
     const double tau_g = switches[trajectory], tau_nu = switches[n + trajectory];
     const double x_rsa_g = k > kmin_g ? grid.at_tau(fmax(rsa_ktau / k, tau_g)) : NO_EVENT;
     const double x_rsa_r = k > kmin_r ? grid.at_tau(fmax(rsa_ktau_r / k, tau_nu)) : NO_EVENT;
@@ -252,10 +278,9 @@ extern "C" __global__ void integrate(
     for (int i = 0; i < DIM; ++i) y[i] = initial[i * n + trajectory];
     double x = x_start;
     Coefficients c = coefficients(grid, bg, x);
-    bool tc = c.kappa > tc_threshold;
-    int tc_interval = grid.interval(x);
-    double x_tc = grid.next_opacity_crossing(tc_threshold, tc_interval);
-    if (x_tc <= x) x_tc = grid.next_opacity_crossing(tc_threshold, tc_interval);
+    double x_tc = switches[2 * n + trajectory];
+    bool tc = x < x_tc;
+    if (!tc) x_tc = NO_EVENT;
     int next_output = 0;
 
     for (int step = 0; step < max_steps && next_output < nout; ++step) {
@@ -327,14 +352,21 @@ extern "C" __global__ void integrate(
             const Coefficients out = coefficients(grid, bg, at);
             double contrast = out.cold * dc + out.baryon * db;
             double total = out.cold + out.baryon;
-            for (int s = 0; s < NS; ++s) {
-                double density = 0.0;
-                for (int q = 0; q < NQ; ++q) {
-                    const int i = nu(s, q);
-                    const double we = weights[q] * energy(out.mass[s], momenta[q]);
-                    density += we * interpolate(y[i], stage[i], f_nu[s * NQ + q], dy[i], h, t);
+            if (at >= x_freeze && freeze_l == 0) {
+                const NeutrinoResponse response = neutrino_response(out, k, momenta, weights);
+                contrast += response.clustered * contrast / total;
+            } else {
+                for (int s = 0; s < NS; ++s) {
+                    double density = 0.0;
+                    for (int q = 0; q < NQ; ++q) {
+                        const int i = nu(s, q);
+                        const double we = weights[q] * energy(out.mass[s], momenta[q]);
+                        density += we * interpolate(y[i], stage[i], f_nu[s * NQ + q], dy[i], h, t);
+                    }
+                    contrast += out.nu_rel[s] * density;
                 }
-                contrast += out.nu_rel[s] * density;
+            }
+            for (int s = 0; s < NS; ++s) {
                 total += out.nu_density[s];
             }
             const int index = (next_output * n + trajectory) * 3;
@@ -344,15 +376,13 @@ extern "C" __global__ void integrate(
             ++next_output;
         }
         if (end == x_tc) {
-            if (tc) {
-                const double pig_tc = rhs(stage, dy, finish, k, regime,
-                                          momenta, weights, short_l, freeze_l);
-                stage[PIG] = pig_tc;
-                stage[pol(2)] = pig_tc / 4.0;
-                stage[pol(3)] = stage[fg(3)] / 4.0;
-            }
-            tc = !tc;
-            x_tc = grid.next_opacity_crossing(tc_threshold, tc_interval);
+            const double pig_tc = rhs(stage, dy, finish, k, regime,
+                                      momenta, weights, short_l, freeze_l);
+            stage[PIG] = pig_tc;
+            stage[pol(2)] = pig_tc / 4.0;
+            stage[pol(3)] = stage[fg(3)] / 4.0;
+            tc = false;
+            x_tc = NO_EVENT;
         }
         double* previous = y;
         y = stage;

@@ -79,7 +79,9 @@ def evolve_cuda(batch, z_out, device=None):
     # Similar wavenumbers do similar amounts of work, so put them in the same warp.
     order = np.argsort(batch.k, kind="stable")
     initial = np.ascontiguousarray(initial_state(batch, settings.a_start)[:, order])
-    switches = np.ascontiguousarray(np.stack((batch._taurend[order], batch._taurend_nu[order])))
+    switches = np.ascontiguousarray(np.stack((
+        batch._taurend[order], batch._taurend_nu[order], batch._ln_a_tc_end[order],
+    )))
     k = batch.k[order]
     n = batch.T
     threads = 32
@@ -98,7 +100,6 @@ def evolve_cuda(batch, z_out, device=None):
                 np.int32(settings.max_steps),
                 np.int32(min(settings.lmax_nu_high_ktau, layout.lmax_nu)),
                 np.int32(max(0, min(settings.nu_freeze_from_l, layout.lmax_nu + 1))),
-                np.float64(settings.tc_epsilon),
                 np.float64(settings.rsa_ktau), np.float64(settings.rsa_ktau_r),
                 np.float64(settings.rsa_ktau_nu),
                 np.float64(settings.rsa_kmin), np.float64(settings.rsa_kmin_r),

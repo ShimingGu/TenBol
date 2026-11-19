@@ -28,7 +28,7 @@ import numpy as np
 import torch
 
 from tenbol.physics.background import NU_PERT_W
-from tenbol.physics.perturbations import _l_coeff
+from tenbol.physics.perturbations import _l_coeff, _neutrino_response
 
 __all__ = ["rhs_torch", "evolve_torch", "to_device"]
 
@@ -88,10 +88,7 @@ def rhs_torch(Y, a, layout, c, settings):
     dgrho_nu = (grho_rel * (wq * epsT * Fnu[..., 0, :]).sum(dim=1)).sum(dim=0)
     dgq_nu = (grho_rel * (wq * Fnu[..., 1, :]).sum(dim=1)).sum(dim=0)
 
-    dgrho_matter = grho_b * db + grho_c * dc + dgrho_nu
-    dgq_matter = grho_b * vb + dgq_nu
-
-    tcu = kappa > (k / s.tc_epsilon)
+    tcu = c["tight_coupling"] != 0
     ktau = k * tau
     # CAMB switches to the algebraic streaming form at tau > max(15/k, taurend),
     # i.e. k*tau > max(15, k*taurend) (equations.f90:313-323) - NOT at a constant
@@ -105,6 +102,20 @@ def rhs_torch(Y, a, layout, c, settings):
                                   k * c["taurend"])) & (k > s.rsa_kmin)
     rsa_r = (ktau > torch.maximum(torch.as_tensor(float(s.rsa_ktau_nu), dtype=Y.dtype, device=Y.device),
                                   k * c["taurend_nu"])) & (k > s.rsa_kmin_r)
+    streaming = torch.zeros_like(k)
+    if s.nu_freeze_from_l <= 0 and n_s:
+        cb = grho_c + grho_b
+        delta_cb = (grho_c * dc + grho_b * db) / cb
+        clustered, derivative, free_streaming = _neutrino_response(
+            k, cb, epsT.reciprocal(), grho_rel, w)
+        clustered = clustered.sum(dim=0)
+        dgrho_nu = torch.where(rsa_r, clustered * delta_cb, dgrho_nu)
+        late_flux = clustered * grho_b / cb * vb - derivative.sum(dim=0) * h * delta_cb / k
+        dgq_nu = torch.where(rsa_r, late_flux, dgq_nu)
+        streaming = torch.where(rsa_r, free_streaming.sum(dim=0), streaming)
+
+    dgrho_matter = grho_b * db + grho_c * dc + dgrho_nu
+    dgq_matter = grho_b * vb + dgq_nu
 
     # ---- radiation streaming approximation ----------------------------
     zm = (0.5 * dgrho_matter / k + etak) / h
@@ -122,10 +133,10 @@ def rhs_torch(Y, a, layout, c, settings):
     qr_e = torch.where(rsa_r, qr_rsa, qr)
 
     dgrho = dgrho_matter + grho_g * dg_e + grho_r * dr_e
-    dgq = dgq_matter + grho_g * qg_e + grho_r * qr_e
 
     inv_tau = torch.minimum(tau.clamp_min(1e-300).reciprocal(), k)
     z = (0.5 * dgrho / k + etak) / h
+    dgq = dgq_matter + grho_g * qg_e + grho_r * qr_e - streaming * z
     sigma = z + 1.5 * dgq / k2
 
     dY = torch.zeros_like(Y)
@@ -287,12 +298,10 @@ def rhs_torch(Y, a, layout, c, settings):
             dFnu[..., l_hi_m, :])
         for ll in range(l_hi_m + 1, L.lmax_nu + 1):
             dFnu[..., ll, :] = torch.where(m, _zero, dFnu[..., ll, :])
-    _ktau_nu = torch.maximum(
-        torch.as_tensor(float(s.rsa_ktau_nu), dtype=Y.dtype, device=Y.device),
-        k * c["taurend_nu"])
-    nu_free = (ktau_t > _ktau_nu) & (k > s.rsa_kmin_r)
-    if bool(nu_free.any()):
-        dFnu = torch.where(nu_free.reshape(1, 1, 1, T), _zero, dFnu)
+    if bool(rsa_r.any()):
+        first = max(int(s.nu_freeze_from_l), 0)
+        dFnu[..., first:, :] = torch.where(
+            rsa_r.reshape(1, 1, 1, T), _zero, dFnu[..., first:, :])
 
     dY[L.offsets["Fnu"]] = dFnu.reshape(
         L.offsets["Fnu"].stop - L.offsets["Fnu"].start, T)
@@ -362,7 +371,7 @@ def evolve_torch_adaptive(batch, z_out, a_end: float = 1.0, settings=None,
         kappa = ct0["kappa"]
         dtau = 1.0 / ct0["h"]
         ktau = kk * ct0["tau"]
-        tcu = kappa > (kk / _c(s.tc_epsilon))
+        tcu = ct0["tight_coupling"] != 0
         rsa_g = (ktau > torch.maximum(_c(s.rsa_ktau), kk * ct0["taurend"])) & (kk > _c(s.rsa_kmin))
         rsa_r = (ktau > torch.maximum(_c(s.rsa_ktau_r), kk * ct0["taurend_nu"])) & (kk > _c(s.rsa_kmin_r))
         angular = ~(tcu | rsa_g)
