@@ -642,18 +642,13 @@ def _event_times(batch: "PerturbationBatch", a0, a1):
         diff = ref - extra
         change = np.sign(diff[:, :-1]) != np.sign(diff[:, 1:])
         arr = np.full((batch.T, 2), np.inf)
-        has = change.any(axis=1)
-        first = np.argmax(change, axis=1)
-        i = np.arange(batch.T)
-        f = diff[i, first] / (diff[i, first] - diff[i, first + 1])
-        arr[:, 0] = np.where(has, np.exp(ln_a[first] + f * (ln_a[first + 1] - ln_a[first])), np.inf)
-        change2 = change.copy()
-        change2[i, first] = False
-        has2 = change2.any(axis=1)
-        second = np.argmax(change2, axis=1)
-        f2 = diff[i, second] / (diff[i, second] - diff[i, second + 1])
-        arr[:, 1] = np.where(has2, np.exp(ln_a[second] + f2 * (ln_a[second + 1] - ln_a[second])),
-                             np.inf)
+        for event in range(2):
+            rows = np.flatnonzero(change.any(axis=1))
+            cols = change.argmax(axis=1)[rows]
+            left, right = diff[rows, cols], diff[rows, cols + 1]
+            f = left / (left - right)
+            arr[rows, event] = np.exp(ln_a[cols] + f * (ln_a[cols + 1] - ln_a[cols]))
+            change[rows, cols] = False
         out[name] = arr
     return out
 

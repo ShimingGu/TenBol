@@ -9,6 +9,7 @@
     "cuda_k_internal_h_mpc": {"min": 0.0001, "max": 20.0, "points": 128},
     "redshifts": [0.0, 0.5, 1.0, 2.0],
     "cuda_dlna_acoustic": 0.24,
+    "cuda_drag_step_limit": 1.0,
     "timed_repeats": 1
   },
   "runs": [
@@ -20,7 +21,47 @@
       "wall_time_speedup": 1.3134062203897736,
       "max_relative_nonlinear_power_error": 0.040470555579026124,
       "worst_point": {"cosmology_index": 0, "k_h_mpc": 0.11450475699382812, "z": 2.0}
+    },
+    {
+      "cosmologies": 8,
+      "camb_workers": 8,
+      "camb_wall_seconds": 29.086992106000253,
+      "cuda_wall_seconds": 41.654732344002696,
+      "wall_time_speedup": 0.6982878167548254,
+      "max_relative_nonlinear_power_error": 0.14401281718146142,
+      "worst_point": {"cosmology_index": 6, "k_h_mpc": 1.7190722018585747, "z": 2.0}
     }
   ],
+  "drag_step_convergence": {
+    "cosmologies": 4,
+    "k_h_mpc": {"min": 0.0001, "max": 20.0, "points": 24},
+    "redshifts": [0.0, 1.0, 2.0],
+    "scope": "linear transfers with a warmed background and thermal cache",
+    "drag_step_limits": [1.0, 1.8],
+    "wall_seconds": [23.785977123996418, 19.11135038199427],
+    "max_trajectory_steps": [128618, 104389],
+    "max_relative_linear_power_change": 5.074078178624042e-06
+  },
+  "drag_step_nonlinear_convergence": {
+    "cosmologies": 2,
+    "drag_step_limits": [1.0, 1.8],
+    "cuda_wall_seconds": [20.888500551001925, 17.424710752995452],
+    "max_relative_nonlinear_power_change": 4.4368835194763534e-07
+  },
+  "tuned_eight_cosmology_profile": {
+    "cosmologies": 8,
+    "cuda_drag_step_limit": 1.8,
+    "cuda_wall_seconds": 36.44063702899439,
+    "phases_seconds": {
+      "background_thermal": 8.265328453999246,
+      "cuda_solver_with_transfers": 27.79020244700223,
+      "other_host_work": 0.38510612799291266
+    },
+    "max_relative_nonlinear_power_error": 0.144012780540413,
+    "worst_point": {"cosmology_index": 6, "k_h_mpc": 1.7190722018585747, "z": 2.0},
+    "cuda_linear_power_relative_error_at_worst_point": -0.01921368901602971,
+    "numpy_linear_power_relative_error_at_worst_point": -0.019217205401142468,
+    "cuda_vs_numpy_linear_power_relative_difference_at_worst_point": 3.585284256812926e-06
+  },
   "acceptance": {"max_relative_nonlinear_power_error": 0.005, "matched_accuracy_speedup": 2.0}
 }

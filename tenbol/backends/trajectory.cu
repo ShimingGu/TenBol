@@ -271,8 +271,9 @@ extern "C" __global__ void integrate(
             const double drag = scattering * (1.0 + (4.0 / 3.0) * c.photon / c.baryon);
             dx = fmin(dx, stiff / fmax(scattering, 1e-30));
             // The photon-baryon slip decays faster than opacity alone when
-            // tight coupling ends in a radiation-dominated mode.
-            dx = fmin(dx, 1.0 / fmax(drag, 1e-30));
+            // tight coupling ends in a radiation-dominated mode. Keep the
+            // dissipative mode inside RK4's negative-real stability interval.
+            dx = fmin(dx, 1.8 / fmax(drag, 1e-30));
         }
         double end = fmin(x + fmax(dx, dx_min), output_x[nout - 1]);
         end = fmin(end, x_tc);

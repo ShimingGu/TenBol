@@ -88,6 +88,9 @@ Verified against CAMB 2.0.5 (see `Tenbol_progress.md` for commands and numbers):
 | Linear transfers and HMcode-2020 | batched APIs available |
 | Native CUDA | perturbation solver available through the batched APIs; end-to-end accuracy and throughput are under validation |
 
+See the [CUDA pipeline benchmark](profiles/tenbol/evidence/cuda_native_pipeline.json)
+for timings and nonlinear errors against parallel CAMB.
+
 The acceptance criterion of the task (max 0.5% relative difference in final
 nonlinear power including HMcode, per backend) is **not met and not claimed**.
 
