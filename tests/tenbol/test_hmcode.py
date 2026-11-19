@@ -1,11 +1,11 @@
 import numpy as np
 
-from tenbol.physics.hmcode import HMcode2020, halo_growth
+from tenbol.physics.hmcode import HMcode2020, SIGMA_K_MAX, halo_growth
 
 
 def test_halo_variance_extends_the_cold_spectrum():
     k = np.geomspace(1e-4, 20.0, 128)
-    extended = np.concatenate((k, np.geomspace(20.0, 1e3, 42)[1:]))
+    extended = np.concatenate((k, np.geomspace(20.0, SIGMA_K_MAX, 42)[1:]))
     growth, accumulated, normalization = halo_growth(0.31)
     a = 1.0 / 3.0
     terms = lambda _: (growth(a) * normalization / a, accumulated(a) / a)

@@ -32,6 +32,7 @@ outside the supported model.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil, exp, log, log1p, sqrt
 
 import numpy as np
 
@@ -94,18 +95,18 @@ class Reionization:
 
 def saha_hydrogen(n, Tm):
     """Saha ionized fraction of hydrogen."""
-    expo = np.exp(min(CB1_H / Tm, 700.0))
+    expo = exp(min(CB1_H / Tm, 700.0))
     saha = (2.0 * np.pi * M_E * K_BOLTZ * Tm / H_PLANCK**2) ** (-1.5) * expo
     b = n * saha
-    return 2.0 / (1.0 + np.sqrt(1.0 + 4.0 * b))
+    return 2.0 / (1.0 + sqrt(1.0 + 4.0 * b))
 
 
 def saha_helium(n_he, Tm):
     """Saha He II fraction."""
-    expo = np.exp(min(CB1_HE1 / Tm, 700.0))
+    expo = exp(min(CB1_HE1 / Tm, 700.0))
     saha = 4.0 * (2.0 * np.pi * M_E * K_BOLTZ * Tm / H_PLANCK**2) ** (-1.5) * expo
     b = n_he * saha
-    return 2.0 / (1.0 + np.sqrt(1.0 + 4.0 * b))
+    return 2.0 / (1.0 + sqrt(1.0 + 4.0 * b))
 
 
 def _he_rate_factor(z):
@@ -136,23 +137,23 @@ class _SampleThermo:
         x_H = min(max(x_H, 0.0), 1.0)
         x_He = min(max(x_He, 0.0), 1.0)
         theta = Tm * 1.0e-4
-        log_theta = np.log(theta)
-        Rdown = 1.0e-19 * A_PPB * np.exp(B_PPB * log_theta) / (
-            1.0 + C_PPB * np.exp(D_PPB * log_theta)
+        log_theta = log(theta)
+        Rdown = 1.0e-19 * A_PPB * exp(B_PPB * log_theta) / (
+            1.0 + C_PPB * exp(D_PPB * log_theta)
         )
         cr_t32 = (CR * Tm) ** 1.5
-        Rup = Rdown * cr_t32 * np.exp(-min(CDB / Tm, 700.0))
-        RupE = Rup * np.exp(-min(CL / Tm, 700.0))
+        Rup = Rdown * cr_t32 * exp(-min(CDB / Tm, 700.0))
+        RupE = Rup * exp(-min(CL / Tm, 700.0))
 
         x = x_H + self.f_he * x_He          # electron fraction per H nucleus
         n = self.n_H(z)
         n_He = self.f_he * n
 
-        log_1pz = np.log1p(z)
+        log_1pz = log1p(z)
         K = CK / H_sec * (
             1.0
-            + AG1 * np.exp(-((log_1pz - ZG1) / WG1) ** 2)
-            + AG2 * np.exp(-((log_1pz - ZG2) / WG2) ** 2)
+            + AG1 * exp(-((log_1pz - ZG1) / WG1) ** 2)
+            + AG2 * exp(-((log_1pz - ZG2) / WG2) ** 2)
         )
 
         A_H = x * x_H * n * Rdown - RupE * (1.0 - x_H)
@@ -170,14 +171,14 @@ class _SampleThermo:
         if x_He <= 1.0e-10:
             dxHe_dz = 0.0
         else:
-            sq0 = np.sqrt(Tm / T_0_VF)
-            sq1 = np.sqrt(Tm / T_1_VF)
-            l0 = np.log1p(sq0)
-            l1 = np.log1p(sq1)
-            Rdown_He = A_VF / sq0 * np.exp(-((1.0 - B_VF) * l0 + (1.0 + B_VF) * l1))
-            Rup_He = 4.0 * Rdown_He * cr_t32 * np.exp(-min(CDB_HE / Tm, 700.0))
-            RupHeE = Rup_He * np.exp(-min(CL / Tm, 700.0))
-            he_boltz = np.exp(min(BFACT / Tm, 680.0))
+            sq0 = sqrt(Tm / T_0_VF)
+            sq1 = sqrt(Tm / T_1_VF)
+            l0 = log1p(sq0)
+            l1 = log1p(sq1)
+            Rdown_He = A_VF / sq0 * exp(-((1.0 - B_VF) * l0 + (1.0 + B_VF) * l1))
+            Rup_He = 4.0 * Rdown_He * cr_t32 * exp(-min(CDB_HE / Tm, 700.0))
+            RupHeE = Rup_He * exp(-min(CL / Tm, 700.0))
+            he_boltz = exp(min(BFACT / Tm, 680.0))
             K_He = CK_HE / H_sec
             A_He = x * x_He * n * Rdown_He - RupHeE * (1.0 - x_He)
             LHe = LAMBDA_HE * n_He * (1.0 - x_He) * he_boltz
@@ -275,7 +276,7 @@ class ThermalHistory:
             ) * (xe / (1.0 + xe + th.f_he))
             r = gamma / H_mid[k]
             T_eq = r * T_rad_m / (2.0 + r)
-            decay = np.exp(-(2.0 + r) * dlna)
+            decay = exp(-(2.0 + r) * dlna)
             Tm[k + 1] = T_eq + (tm - T_eq) * decay
 
         # ---- reionization: tanh matching the requested optical depth -----
@@ -323,7 +324,7 @@ class ThermalHistory:
         h = z1 - z0
         d = th.derivs(z0, xh, xhe, tm, H0)
         rate = abs(d[component])
-        n_sub = int(np.ceil(rate * abs(h) / self.max_change)) if rate > 0 else 1
+        n_sub = ceil(rate * abs(h) / self.max_change) if rate > 0 else 1
         n_sub = min(max(n_sub, 1), self.max_substeps)
         hs = h / n_sub
         val = xh if component == 0 else xhe

@@ -88,13 +88,14 @@ __device__ __noinline__ NeutrinoResponse neutrino_response(
     const Coefficients& c, double k, const double* momenta, const double* weights
 ) {
     const double gravity = 0.5 * (c.cold + c.baryon);
+    const double streaming_rate = NU_STREAMING_SCALE_SQUARED * k * k;
     NeutrinoResponse response{0.0, 0.0, 0.0};
     for (int s = 0; s < NS; ++s) {
         const double density = (4.0 / 3.0) * c.nu_rel[s];
         for (int q = 0; q < NQ; ++q) {
             const double eps = energy(c.mass[s], momenta[q]);
             const double v2 = 1.0 / (eps * eps);
-            const double r = gravity / (gravity + k * k * v2);
+            const double r = gravity / (gravity + streaming_rate * v2);
             const double enthalpy = density * weights[q] * eps;
             response.clustered += enthalpy * r;
             response.derivative += enthalpy * r * (1.0 - r) * (1.0 - 2.0 * v2);

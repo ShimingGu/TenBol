@@ -7,7 +7,7 @@ import numpy as np
 
 from tenbol.errors import ExecutionFailure, NumericalFailure, UnsupportedConfiguration
 from tenbol.physics.background import NU_PERT_W, NU_Q
-from tenbol.physics.perturbations import initial_state
+from tenbol.physics.perturbations import NU_STREAMING_SCALE_SQUARED, initial_state
 
 
 @lru_cache(maxsize=32)
@@ -20,6 +20,7 @@ def _kernel(layout):
         FNU=layout.offsets["Fnu"].start, DIM=layout.size, NS=layout.n_species,
         NQ=layout.n_q, LG=layout.lmax_g, LP=layout.lmax_pol,
         LR=layout.lmax_r, LNU=layout.lmax_nu,
+        NU_STREAMING_SCALE_SQUARED=NU_STREAMING_SCALE_SQUARED,
     )
     source = files(__package__).joinpath("trajectory.cu").read_text(encoding="utf-8")
     options = tuple(f"-D{name}={value}" for name, value in constants.items())

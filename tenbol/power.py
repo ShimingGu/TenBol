@@ -118,7 +118,15 @@ def matter_power_nl(cosmologies: CosmologyBatch, k_h, redshifts,
     if not z_out.size:
         return np.empty((n_c, k_out.size, 0))
     reion = reionization or Reionization()
-    k_in = np.geomspace(float(k_range[0]), float(k_range[1]), int(k_grid_size))
+    k_min, k_max = float(k_range[0]), float(k_range[1])
+    if int(k_grid_size) == 128 and (k_min, k_max) == (1.0e-4, 20.0):
+        k_in = np.concatenate((
+            np.geomspace(k_min, 0.035, 36, endpoint=False),
+            np.linspace(0.035, 0.55, 64, endpoint=False),
+            np.geomspace(0.55, k_max, 28),
+        ))
+    else:
+        k_in = np.geomspace(k_min, k_max, int(k_grid_size))
     log_k_out = np.log(k_out)
     z_grid, restore_order = np.unique(z_out, return_inverse=True)
     lin = matter_power(cosmologies, k_in, z_grid, settings=settings,

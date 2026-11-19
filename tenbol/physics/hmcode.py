@@ -54,7 +54,7 @@ KMAX_WIGGLE = 5.0
 NK_WIGGLE = 512
 WIGGLE_SIGMA = 0.25       # Gaussian width in ln k
 KNORM_NOWIGGLE = 0.03     # no-wiggle spectrum is pinned to the linear one here
-SIGMA_K_MAX = 1.0e3      # h/Mpc, upper end of the variance quadrature
+SIGMA_K_MAX = 100.0     # h/Mpc, upper end of the extrapolated variance grid
 
 
 @dataclass

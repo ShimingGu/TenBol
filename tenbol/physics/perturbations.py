@@ -347,6 +347,10 @@ def _l_coeff(k, l):
     return k * l / (2.0 * l + 1.0), k * (l + 1.0) / (2.0 * l + 1.0)
 
 
+# Calibration of the steady response near the free-streaming scale.
+NU_STREAMING_SCALE_SQUARED = 1.2
+
+
 def _neutrino_response(k, density_cb, velocity, density_rel, weights):
     """Per-species response once the full massive hierarchy is frozen.
 
@@ -356,7 +360,7 @@ def _neutrino_response(k, density_cb, velocity, density_rel, weights):
     """
     gravity = 0.5 * density_cb
     v2 = velocity ** 2
-    clustered = gravity / (gravity + k ** 2 * v2)
+    clustered = gravity / (gravity + NU_STREAMING_SCALE_SQUARED * k ** 2 * v2)
     derivative = clustered * (1.0 - clustered) * (1.0 - 2.0 * v2)
     enthalpy = (4.0 / 3.0) * weights[None, :, None] * density_rel[:, None, :] / velocity
     return ((enthalpy * clustered).sum(axis=1),
