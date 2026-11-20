@@ -71,50 +71,15 @@ cosmology.
 
 ## Use TenBol with an MCMC sampler
 
-The sampler proposes cosmologies and decides which proposals to accept.
-TenBol predicts the matter power for those proposals. Your likelihood compares
-each prediction with your data and gives the sampler one score per proposal.
+The sampler proposes values for your model parameters. Call TenBol with the
+cosmological parameters to get matter power `P(k, z)` on the grid your analysis
+needs. Your own model takes that spectrum and any survey parameters and
+predicts what you measured, whether that's galaxy clustering, shear, or
+something else. Your likelihood compares those predictions with the data.
 
-Send the proposals that are ready together in one call. For example, tell
-`emcee` to pass a group of walkers to your likelihood with `vectorize=True`.
-Each row of the returned power array belongs to the corresponding proposal.
-This lets the GPU work on several proposals at once. With a single chain,
-each proposal depends on the result of the previous step.
+When several proposals are ready together, pass their cosmologies to TenBol
+in one call. The spectra come back in proposal order. Keep that order as your
+model predicts the measurements and you return one log probability per
+proposal. In `emcee`, `vectorize=True` tells the sampler to call your log
+probability function with a batch of proposals.
 [emcee sampler guide](https://emcee.readthedocs.io/en/stable/user/sampler/)
-
-Install `emcee` with `python -m pip install emcee` to try the example below.
-It uses the first spectrum from the example above as mock data and varies
-`h` and the cold dark matter density, `omega_c`.
-
-```python
-import emcee
-import numpy as np
-
-data = nonlinear[0]
-error = 0.05 * data
-
-
-def log_probability(proposals):
-    h, omega_c = np.asarray(proposals).T
-    in_prior = (0.60 < h) & (h < 0.80) & (0.10 < omega_c) & (omega_c < 0.16)
-    scores = np.full(len(h), -np.inf)
-    if in_prior.any():
-        batch = CosmologyBatch.from_columns(
-            h=h[in_prior], omega_c=omega_c[in_prior],
-            omega_b=0.0224, A_s=2.1e-9, n_s=0.965, m_nu=0.06,
-        )
-        prediction = matter_power_nl(batch, k, z, backend=backend)
-        residual = (prediction - data) / error
-        scores[in_prior] = -0.5 * np.sum(residual**2, axis=(1, 2))
-    return scores
-
-
-rng = np.random.default_rng(42)
-start = rng.normal(loc=[0.67, 0.12], scale=[0.005, 0.002], size=(8, 2))
-sampler = emcee.EnsembleSampler(8, 2, log_probability, vectorize=True)
-sampler.run_mcmc(start, 1)
-```
-
-For a real fit, replace the mock data and error model with yours and set the
-priors and number of steps for your analysis. The same pattern works with any
-sampler that can score several proposals in one call.
