@@ -7,22 +7,9 @@ matter, and baryons, plus nonlinear matter power. It supports massive neutrinos
 and runs on CPUs with NumPy or NVIDIA GPUs with CUDA.
 
 TenBol has achieved less than 0.62% relative error in nonlinear matter power
-compared with CAMB in testing.
-
-## How we made it faster
-
-We moved the part that follows the growth of density fluctuations to the GPU.
-Each GPU thread follows one scale in one cosmology. Some scales need short
-time steps. Others can take longer steps and finish sooner. The intermediate
-results stay on the GPU until the calculation finishes.
-
-The CPU works out the expansion and temperature history once per cosmology
-and shares it across all scales. It applies the nonlinear correction at the end.
-We switched the temperature calculations that work on one number at a time
-to simpler math calls. We also moved more of the calculation points to scales
-where the power spectrum changes quickly, keeping the total number of points
-the same. On one H100 benchmark, median time for the same batch fell from
-37.2 to 29.9 seconds.
+compared with CAMB in testing. For a batch of two cosmologies, TenBol was
+**1.9× as fast as CAMB** for nonlinear matter power, taking 15.5 seconds on one
+NVIDIA H100 slice versus 29.9 seconds on two CPU workers.
 
 ## Install
 
